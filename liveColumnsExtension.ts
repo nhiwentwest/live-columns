@@ -286,6 +286,24 @@ class ColumnsWidget extends WidgetType {
      * Handle keyboard navigation between columns
      */
     private handleKeydown(e: KeyboardEvent, columnIndex: number) {
+        // Handle Cmd+A (Mac) or Ctrl+A (Windows) - select all within column only
+        if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const columns = this.container?.querySelectorAll('.live-column');
+            const currentCol = columns?.[columnIndex] as HTMLElement;
+            if (currentCol) {
+                const range = document.createRange();
+                range.selectNodeContents(currentCol);
+                const sel = window.getSelection();
+                sel?.removeAllRanges();
+                sel?.addRange(range);
+            }
+            return;
+        }
+
+        // Handle Tab navigation
         if (e.key === 'Tab' && this.container) {
             e.preventDefault();
             const columns = this.container.querySelectorAll('.live-column');

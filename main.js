@@ -180,6 +180,21 @@ var ColumnsWidget = class extends import_view.WidgetType {
    * Handle keyboard navigation between columns
    */
   handleKeydown(e, columnIndex) {
+    var _a;
+    if (e.key === "a" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const columns = (_a = this.container) == null ? void 0 : _a.querySelectorAll(".live-column");
+      const currentCol = columns == null ? void 0 : columns[columnIndex];
+      if (currentCol) {
+        const range = document.createRange();
+        range.selectNodeContents(currentCol);
+        const sel = window.getSelection();
+        sel == null ? void 0 : sel.removeAllRanges();
+        sel == null ? void 0 : sel.addRange(range);
+      }
+      return;
+    }
     if (e.key === "Tab" && this.container) {
       e.preventDefault();
       const columns = this.container.querySelectorAll(".live-column");
