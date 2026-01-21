@@ -15,7 +15,7 @@ Live Columns allows you to create multi-column layouts visually. Lets you insert
 ## How to Use
 
 After installing, simply click the plugin icon located in the **left ribbon** (the sidebar on the left).
-5.  
+
 ![Settings Menu](link-to-your-screenshot-1.png)
 
 
