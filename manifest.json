@@ -1,0 +1,9 @@
+{
+	"id": "live-columns",
+	"name": "Live Columns",
+	"version": "1.0.0",
+	"minAppVersion": "1.0.0",
+	"description": "Create editable columns in your notes with customizable colors. Type directly in columns in Live Preview mode.",
+	"author": "nhiwentwest",
+	"isDesktopOnly": false
+}

@@ -1,0 +1,494 @@
+/* Live Columns Plugin Styles */
+
+/* ============================================
+   Column Container
+   ============================================ */
+.live-columns-container {
+	display: grid;
+	gap: 16px;
+	width: 100%;
+	margin: 12px 0;
+}
+
+/* Column counts */
+.live-columns-2 {
+	grid-template-columns: repeat(2, 1fr);
+}
+
+.live-columns-1 {
+	grid-template-columns: 1fr;
+}
+
+.live-columns-3 {
+	grid-template-columns: repeat(3, 1fr);
+}
+
+.live-columns-4 {
+	grid-template-columns: repeat(4, 1fr);
+}
+
+.live-columns-5 {
+	grid-template-columns: repeat(5, 1fr);
+}
+
+.live-columns-6 {
+	grid-template-columns: repeat(6, 1fr);
+}
+
+/* ============================================
+   Individual Column
+   ============================================ */
+.live-column {
+	padding: 16px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-primary);
+	min-height: 60px;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+	word-wrap: break-word;
+	overflow-wrap: break-word;
+}
+
+.live-column:hover {
+	border-color: var(--background-modifier-border-hover);
+}
+
+.live-column:focus {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+	outline: none;
+}
+
+.live-column:focus-within {
+	border-color: var(--interactive-accent);
+}
+
+/* Placeholder for empty columns */
+.live-column:empty::before,
+.live-column[data-placeholder]:empty::before {
+	content: attr(data-placeholder);
+	color: var(--text-muted);
+	font-style: italic;
+	pointer-events: none;
+}
+
+.live-column-empty {
+	color: var(--text-muted);
+	font-style: italic;
+	margin: 0;
+}
+
+/* ============================================
+   Column Content Styling
+   ============================================ */
+.live-column p {
+	margin: 0 0 8px 0;
+}
+
+.live-column p:last-child {
+	margin-bottom: 0;
+}
+
+.live-column h1,
+.live-column h2,
+.live-column h3,
+.live-column h4,
+.live-column h5,
+.live-column h6 {
+	margin: 0 0 8px 0;
+}
+
+.live-column strong {
+	font-weight: 600;
+}
+
+.live-column em {
+	font-style: italic;
+}
+
+.live-column code {
+	background: var(--background-secondary);
+	padding: 2px 4px;
+	border-radius: 4px;
+	font-family: var(--font-monospace);
+	font-size: 0.9em;
+}
+
+
+.live-column a {
+	color: var(--link-color);
+	text-decoration: none;
+}
+
+.live-column a:hover {
+	text-decoration: underline;
+}
+
+/* Hide marker spans in editor */
+.live-columns-marker-hidden {
+	display: none;
+}
+
+/* Hide body text between markers in editor */
+.live-columns-body-hidden {
+	display: none;
+}
+
+/* Basic color tokens (optional) */
+.live-col-blue {
+	border-color: #3b82f6;
+	background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.15));
+}
+
+.live-col-green {
+	border-color: #22c55e;
+	background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(34, 197, 94, 0.15));
+}
+
+.live-col-orange {
+	border-color: #f97316;
+	background: linear-gradient(135deg, rgba(249, 115, 22, 0.08), rgba(249, 115, 22, 0.15));
+}
+
+.live-col-purple {
+	border-color: #a855f7;
+	background: linear-gradient(135deg, rgba(168, 85, 247, 0.08), rgba(168, 85, 247, 0.15));
+}
+
+.live-col-gray {
+	border-color: #6b7280;
+	background: linear-gradient(135deg, rgba(107, 114, 128, 0.08), rgba(107, 114, 128, 0.15));
+}
+
+.live-col-red {
+	border-color: #ef4444;
+	background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(239, 68, 68, 0.15));
+}
+
+.live-col-yellow {
+	border-color: #fbbf24;
+	background: linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(251, 191, 36, 0.15));
+}
+
+.live-col-pink {
+	border-color: #ec4899;
+	background: linear-gradient(135deg, rgba(236, 72, 153, 0.08), rgba(236, 72, 153, 0.15));
+}
+
+.live-col-teal {
+	border-color: #14b8a6;
+	background: linear-gradient(135deg, rgba(20, 184, 166, 0.08), rgba(20, 184, 166, 0.15));
+}
+
+.live-col-indigo {
+	border-color: #6366f1;
+	background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(99, 102, 241, 0.15));
+}
+
+.live-col-fuchsia {
+	border-color: #d946ef;
+	background: linear-gradient(135deg, rgba(217, 70, 239, 0.08), rgba(217, 70, 239, 0.15));
+}
+
+.live-col-lightblue {
+	border-color: #93c5fd;
+	background: linear-gradient(135deg, rgba(147, 197, 253, 0.08), rgba(147, 197, 253, 0.15));
+}
+
+.live-col-darkblue {
+	border-color: #1e40af;
+	background: linear-gradient(135deg, rgba(30, 64, 175, 0.08), rgba(30, 64, 175, 0.15));
+}
+
+.live-col-lightgreen {
+	border-color: #86efac;
+	background: linear-gradient(135deg, rgba(134, 239, 172, 0.08), rgba(134, 239, 172, 0.15));
+}
+
+.live-col-darkgreen {
+	border-color: #15803d;
+	background: linear-gradient(135deg, rgba(21, 128, 61, 0.08), rgba(21, 128, 61, 0.15));
+}
+
+.live-col-lightgray {
+	border-color: #d1d5db;
+	background: linear-gradient(135deg, rgba(209, 213, 219, 0.08), rgba(209, 213, 219, 0.15));
+}
+
+.live-col-darkgray {
+	border-color: #374151;
+	background: linear-gradient(135deg, rgba(55, 65, 81, 0.08), rgba(55, 65, 81, 0.15));
+}
+
+.live-col-lightpurple {
+	border-color: #c4b5fd;
+	background: linear-gradient(135deg, rgba(196, 181, 253, 0.08), rgba(196, 181, 253, 0.15));
+}
+
+.live-col-darkpurple {
+	border-color: #7c3aed;
+	background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(124, 58, 237, 0.15));
+}
+
+/* Border-only color tokens (no background change) */
+.live-border-blue {
+	border-color: #3b82f6 !important;
+	border-width: 2px;
+}
+
+.live-border-green {
+	border-color: #22c55e !important;
+	border-width: 2px;
+}
+
+.live-border-orange {
+	border-color: #f97316 !important;
+	border-width: 2px;
+}
+
+.live-border-purple {
+	border-color: #a855f7 !important;
+	border-width: 2px;
+}
+
+.live-border-gray {
+	border-color: #6b7280 !important;
+	border-width: 2px;
+}
+
+.live-border-red {
+	border-color: #ef4444 !important;
+	border-width: 2px;
+}
+
+.live-border-yellow {
+	border-color: #fbbf24 !important;
+	border-width: 2px;
+}
+
+.live-border-pink {
+	border-color: #ec4899 !important;
+	border-width: 2px;
+}
+
+.live-border-teal {
+	border-color: #14b8a6 !important;
+	border-width: 2px;
+}
+
+.live-border-indigo {
+	border-color: #6366f1 !important;
+	border-width: 2px;
+}
+
+.live-border-fuchsia {
+	border-color: #d946ef !important;
+	border-width: 2px;
+}
+
+.live-border-lightblue {
+	border-color: #93c5fd !important;
+	border-width: 2px;
+}
+
+.live-border-darkblue {
+	border-color: #1e40af !important;
+	border-width: 2px;
+}
+
+.live-border-lightgreen {
+	border-color: #86efac !important;
+	border-width: 2px;
+}
+
+.live-border-darkgreen {
+	border-color: #15803d !important;
+	border-width: 2px;
+}
+
+.live-border-lightgray {
+	border-color: #d1d5db !important;
+	border-width: 2px;
+}
+
+.live-border-darkgray {
+	border-color: #374151 !important;
+	border-width: 2px;
+}
+
+.live-border-lightpurple {
+	border-color: #c4b5fd !important;
+	border-width: 2px;
+}
+
+.live-border-darkpurple {
+	border-color: #7c3aed !important;
+	border-width: 2px;
+}
+
+/* Color presets */
+
+/* ============================================
+   Column Selection Mode (for color picking)
+   ============================================ */
+.live-columns-selecting .live-column {
+	cursor: pointer;
+	position: relative;
+}
+
+.live-columns-selecting .live-column::after {
+	content: '🎨';
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	font-size: 16px;
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.live-columns-selecting .live-column:hover {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+	transform: scale(1.02);
+}
+
+.live-columns-selecting .live-column:hover::after {
+	opacity: 1;
+	animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+	from {
+		transform: scale(1);
+	}
+
+	to {
+		transform: scale(1.2);
+	}
+}
+
+.live-column ul,
+.live-column ol {
+	margin: 0 0 8px 0;
+	padding-left: 1.5em;
+}
+
+.live-column li {
+	margin-bottom: 4px;
+}
+
+/* ============================================
+   Warning Messages
+   ============================================ */
+.live-columns-warning {
+	background: color-mix(in srgb, var(--text-warning) 10%, transparent);
+	border: 1px solid var(--text-warning);
+	border-radius: 6px;
+	padding: 8px 12px;
+	margin-bottom: 8px;
+	font-size: 0.85em;
+	color: var(--text-warning);
+}
+
+/* ============================================
+   Live Preview - Hide Raw Markers
+   ============================================ */
+/* These lines get replaced by our widget, but just in case */
+.cm-line:has([data-live-columns-marker]) {
+	display: none;
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+@media (max-width: 768px) {
+	.live-columns-container {
+		grid-template-columns: 1fr !important;
+		gap: 12px;
+	}
+
+	.live-column {
+		margin-bottom: 0;
+	}
+}
+
+@media (max-width: 480px) {
+	.live-column {
+		padding: 12px;
+	}
+
+	.live-columns-container {
+		gap: 8px;
+	}
+}
+
+/* ============================================
+   Dark Theme Adjustments
+   ============================================ */
+.theme-dark .live-column {
+	background: var(--background-primary-alt);
+}
+
+.theme-dark .live-column:focus {
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+
+/* ============================================
+   Animation (Subtle)
+   ============================================ */
+.live-columns-container {
+	animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+	.live-columns-container {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
+		animation: none;
+	}
+
+	.live-column {
+		flex: 1;
+		min-width: 150px;
+		border: 1px solid #ccc;
+		page-break-inside: avoid;
+	}
+
+	.live-columns-warning {
+		display: none;
+	}
+}
+
+/* ============================================
+   Accessibility
+   ============================================ */
+.live-column:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.live-columns-container {
+		animation: none;
+	}
+
+	.live-column {
+		transition: none;
+	}
+}
