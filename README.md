@@ -8,9 +8,7 @@ Live Columns allows you to create multi-column layouts visually. Lets you insert
 
 * **Editing:** Create columns and write content directly within the Live Preview view. No need to switch to Source Mode or deal with messy code blocks.
 * **Flexible Layouts:** Quickly insert 2 columns, 3 columns, or full-width (1 column) sections.
-* **Customizable Styles:**
-    * Change **Background Colors** for each column to highlight information.
-    * Customize **Border Colors** to match your theme or aesthetic.
+* **Customizable Styles:** Change background colors/border colors.
 
 ## How to Use
 
