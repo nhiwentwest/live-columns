@@ -707,16 +707,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     const elText = elLines.join("\n");
     const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
     const endRe = /%%\s*columns:end\s*%%/i;
-    let startMatch = null;
-    let markerLineIndex = -1;
-    for (let i = elStart; i <= elEnd; i++) {
-      const match = lines[i].match(startRe);
-      if (match) {
-        startMatch = match;
-        markerLineIndex = i;
-        break;
-      }
-    }
+    const startMatch = elText.match(startRe);
     if (!startMatch) {
       let inBlock = false;
       let blockStart = -1;
@@ -740,47 +731,40 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       }
       return;
     }
+    const markerIndex = elText.indexOf(startMatch[0]);
     const numColumns = parseInt(startMatch[1], 10);
     if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) {
       return;
     }
-    let blockEndLine = -1;
-    for (let i = markerLineIndex; i < lines.length; i++) {
-      if (lines[i].match(endRe)) {
-        blockEndLine = i;
-        break;
+    const afterMarker = elText.substring(markerIndex + startMatch[0].length);
+    let bodyText = "";
+    const endMatch = afterMarker.match(endRe);
+    if (endMatch) {
+      bodyText = afterMarker.substring(0, afterMarker.indexOf(endMatch[0]));
+    } else {
+      const restOfDoc = lines.slice(elEnd + 1).join("\n");
+      const restEndMatch = restOfDoc.match(endRe);
+      if (restEndMatch) {
+        bodyText = afterMarker + "\n" + restOfDoc.substring(0, restOfDoc.indexOf(restEndMatch[0]));
+      } else {
+        return;
       }
     }
-    if (blockEndLine === -1) {
-      return;
-    }
-    const bodyLines = lines.slice(markerLineIndex + 1, blockEndLine);
-    const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
-    const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
+    const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/im;
+    const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/im;
     let colors = [];
     let borders = [];
-    let idx = 0;
-    while (idx < bodyLines.length) {
-      const line = bodyLines[idx].trim();
-      if (!line) {
-        idx += 1;
-        continue;
-      }
-      const colorMatch = line.match(colorRe);
-      if (colorMatch) {
-        colors = colorMatch[1].split("|").map((c) => c.trim());
-        bodyLines.splice(idx, 1);
-        continue;
-      }
-      const borderMatch = line.match(borderRe);
-      if (borderMatch) {
-        borders = borderMatch[1].split("|").map((c) => c.trim());
-        bodyLines.splice(idx, 1);
-        continue;
-      }
-      break;
+    const colorMatchBody = bodyText.match(colorRe);
+    if (colorMatchBody) {
+      colors = colorMatchBody[1].split("|").map((c) => c.trim());
+      bodyText = bodyText.replace(colorRe, "");
     }
-    let bodyText = bodyLines.join("\n");
+    const borderMatchBody = bodyText.match(borderRe);
+    if (borderMatchBody) {
+      borders = borderMatchBody[1].split("|").map((c) => c.trim());
+      bodyText = bodyText.replace(borderRe, "");
+    }
+    bodyText = bodyText.trim();
     const sepRe = /^---\s*col\s*---$/im;
     const parts = bodyText.split(sepRe);
     const container = document.createElement("div");

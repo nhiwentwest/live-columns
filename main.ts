@@ -448,22 +448,14 @@ export default class LiveColumnsPlugin extends Plugin {
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
-        // Scan all lines in this element to find a columns:start marker
-        let startMatch: RegExpMatchArray | null = null;
-        let markerLineIndex = -1;
-        for (let i = elStart; i <= elEnd; i++) {
-            const match = lines[i].match(startRe);
-            if (match) {
-                startMatch = match;
-                markerLineIndex = i;
-                break;
-            }
-        }
+        // Check the element text directly for a columns:start marker
+        const startMatch = elText.match(startRe);
 
-        // If this element doesn't contain a start marker, check if it's inside a block
+        // If no start marker in this element, check if it needs to be hidden
         if (!startMatch) {
-            // Check if there's a block that contains this element by scanning document
-            // Find blocks in document
+            // Check if element text is INSIDE a columns block (contains col separator or content
+            // but doesn't contain start marker and doesn't contain end marker alone)
+            // We need to find if any block in the FULL document contains this element
             let inBlock = false;
             let blockStart = -1;
             let blockEnd = -1;
@@ -474,7 +466,7 @@ export default class LiveColumnsPlugin extends Plugin {
                 }
                 if (lines[i].match(endRe) && blockStart !== -1) {
                     blockEnd = i;
-                    // Check if element is inside this block
+                    // Check if element's start line is inside this block (exclusive of start, inclusive of end)
                     if (elStart > blockStart && elStart <= blockEnd) {
                         inBlock = true;
                         break;
@@ -486,11 +478,14 @@ export default class LiveColumnsPlugin extends Plugin {
             }
 
             if (inBlock) {
-                // This element is inside a columns block, hide it
                 el.addClass('live-columns-marker-hidden');
             }
             return;
         }
+
+        // This element contains a columns:start marker - find where in elText it is
+        // and extract content from there
+        const markerIndex = elText.indexOf(startMatch[0]);
 
         // This element contains a columns:start marker - render the columns
         const numColumns = parseInt(startMatch[1], 10);
@@ -498,54 +493,50 @@ export default class LiveColumnsPlugin extends Plugin {
             return;
         }
 
-        // Find the complete block in the document starting from the marker line
-        let blockEndLine = -1;
-        for (let i = markerLineIndex; i < lines.length; i++) {
-            if (lines[i].match(endRe)) {
-                blockEndLine = i;
-                break;
+        // Extract content after the start marker (from elText)
+        const afterMarker = elText.substring(markerIndex + startMatch[0].length);
+
+        // Find end marker in the remaining text (could be in elText or in fullText)
+        let bodyText = '';
+        const endMatch = afterMarker.match(endRe);
+        if (endMatch) {
+            // End marker is in this element - extract body between markers
+            bodyText = afterMarker.substring(0, afterMarker.indexOf(endMatch[0]));
+        } else {
+            // End marker is in a later part of the document - use afterMarker + rest of document
+            // Find end marker in full document starting from elEnd
+            const restOfDoc = lines.slice(elEnd + 1).join('\n');
+            const restEndMatch = restOfDoc.match(endRe);
+            if (restEndMatch) {
+                bodyText = afterMarker + '\n' + restOfDoc.substring(0, restOfDoc.indexOf(restEndMatch[0]));
+            } else {
+                // No end marker found
+                return;
             }
         }
 
-        if (blockEndLine === -1) {
-            // No end marker found
-            return;
-        }
-
-        // Extract body content between markers (use markerLineIndex, not elStart)
-        const bodyLines = lines.slice(markerLineIndex + 1, blockEndLine);
-        const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
-        const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
+        // Parse metadata from bodyText
+        const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/im;
+        const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/im;
         let colors: string[] = [];
         let borders: string[] = [];
 
-        // Consume optional metadata lines at the top (order-independent, skipping blanks)
-        let idx = 0;
-        while (idx < bodyLines.length) {
-            const line = bodyLines[idx].trim();
-            if (!line) {
-                idx += 1;
-                continue;
-            }
-
-            const colorMatch = line.match(colorRe);
-            if (colorMatch) {
-                colors = colorMatch[1].split('|').map(c => c.trim());
-                bodyLines.splice(idx, 1);
-                continue;
-            }
-
-            const borderMatch = line.match(borderRe);
-            if (borderMatch) {
-                borders = borderMatch[1].split('|').map(c => c.trim());
-                bodyLines.splice(idx, 1);
-                continue;
-            }
-
-            break;
+        // Extract colors if present
+        const colorMatchBody = bodyText.match(colorRe);
+        if (colorMatchBody) {
+            colors = colorMatchBody[1].split('|').map(c => c.trim());
+            bodyText = bodyText.replace(colorRe, '');
         }
 
-        let bodyText = bodyLines.join('\n');
+        // Extract borders if present
+        const borderMatchBody = bodyText.match(borderRe);
+        if (borderMatchBody) {
+            borders = borderMatchBody[1].split('|').map(c => c.trim());
+            bodyText = bodyText.replace(borderRe, '');
+        }
+
+        // Clean up bodyText
+        bodyText = bodyText.trim();
 
         // Split by separator
         const sepRe = /^---\s*col\s*---$/im;
