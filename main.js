@@ -690,6 +690,8 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
    * Post-processor for Reading mode
    * Transforms marker-based columns into layout
    * Uses ctx.getSectionInfo(el).text to read raw source (which still has %% markers)
+   * 
+   * ELEMENT-CENTRIC APPROACH: Check if THIS element's lines contain column markers
    */
   columnsPostProcessor(el, ctx) {
     var _a, _b;
@@ -701,52 +703,49 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     const lines = fullText.split("\n");
     const elStart = info.lineStart;
     const elEnd = info.lineEnd;
+    const elLines = lines.slice(elStart, elEnd + 1);
+    const elText = elLines.join("\n");
     const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
     const endRe = /%%\s*columns:end\s*%%/i;
-    const blocks = [];
-    let currentBlockStart = -1;
-    let currentNumCols = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const startMatch = lines[i].match(startRe);
-      if (startMatch && currentBlockStart === -1) {
-        currentBlockStart = i;
-        currentNumCols = parseInt(startMatch[1], 10);
+    const startMatch = elText.match(startRe);
+    if (!startMatch) {
+      let inBlock = false;
+      let blockStart = -1;
+      let blockEnd = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].match(startRe) && blockStart === -1) {
+          blockStart = i;
+        }
+        if (lines[i].match(endRe) && blockStart !== -1) {
+          blockEnd = i;
+          if (elStart > blockStart && elStart <= blockEnd) {
+            inBlock = true;
+            break;
+          }
+          blockStart = -1;
+          blockEnd = -1;
+        }
       }
-      if (lines[i].match(endRe) && currentBlockStart !== -1) {
-        blocks.push({
-          startLine: currentBlockStart,
-          endLine: i,
-          numColumns: currentNumCols
-        });
-        currentBlockStart = -1;
-        currentNumCols = 0;
+      if (inBlock) {
+        el.addClass("live-columns-marker-hidden");
       }
-    }
-    let columnsStartLine = -1;
-    let columnsEndLine = -1;
-    let numColumns = 0;
-    for (const block of blocks) {
-      if (elStart >= block.startLine && elStart <= block.endLine) {
-        columnsStartLine = block.startLine;
-        columnsEndLine = block.endLine;
-        numColumns = block.numColumns;
-        break;
-      }
-    }
-    if (columnsStartLine === -1 || columnsEndLine === -1) {
       return;
     }
-    if (elStart > columnsStartLine && elStart <= columnsEndLine) {
-      el.addClass("live-columns-marker-hidden");
-      return;
-    }
-    if (elStart !== columnsStartLine) {
-      return;
-    }
+    const numColumns = parseInt(startMatch[1], 10);
     if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) {
       return;
     }
-    const bodyLines = lines.slice(columnsStartLine + 1, columnsEndLine);
+    let blockEndLine = -1;
+    for (let i = elStart; i < lines.length; i++) {
+      if (lines[i].match(endRe)) {
+        blockEndLine = i;
+        break;
+      }
+    }
+    if (blockEndLine === -1) {
+      return;
+    }
+    const bodyLines = lines.slice(elStart + 1, blockEndLine);
     const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
     const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
     let colors = [];

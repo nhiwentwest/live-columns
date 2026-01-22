@@ -426,6 +426,8 @@ export default class LiveColumnsPlugin extends Plugin {
      * Post-processor for Reading mode
      * Transforms marker-based columns into layout
      * Uses ctx.getSectionInfo(el).text to read raw source (which still has %% markers)
+     * 
+     * ELEMENT-CENTRIC APPROACH: Check if THIS element's lines contain column markers
      */
     columnsPostProcessor(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
         const info = ctx.getSectionInfo(el);
@@ -438,76 +440,70 @@ export default class LiveColumnsPlugin extends Plugin {
         const elStart = info.lineStart;
         const elEnd = info.lineEnd;
 
-        // Find ALL columns blocks in the document
+        // Get only THIS element's lines
+        const elLines = lines.slice(elStart, elEnd + 1);
+        const elText = elLines.join('\n');
+
+        // Check if this element contains a columns:start marker
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
-        interface ColumnsBlockInfo {
-            startLine: number;
-            endLine: number;
-            numColumns: number;
-        }
-        const blocks: ColumnsBlockInfo[] = [];
+        const startMatch = elText.match(startRe);
 
-        let currentBlockStart = -1;
-        let currentNumCols = 0;
+        // If this element doesn't contain a start marker, check if it's inside a block
+        if (!startMatch) {
+            // Check if there's a block that contains this element by scanning document
+            // Find blocks in document
+            let inBlock = false;
+            let blockStart = -1;
+            let blockEnd = -1;
 
-        for (let i = 0; i < lines.length; i++) {
-            const startMatch = lines[i].match(startRe);
-            if (startMatch && currentBlockStart === -1) {
-                currentBlockStart = i;
-                currentNumCols = parseInt(startMatch[1], 10);
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].match(startRe) && blockStart === -1) {
+                    blockStart = i;
+                }
+                if (lines[i].match(endRe) && blockStart !== -1) {
+                    blockEnd = i;
+                    // Check if element is inside this block
+                    if (elStart > blockStart && elStart <= blockEnd) {
+                        inBlock = true;
+                        break;
+                    }
+                    // Reset for next block
+                    blockStart = -1;
+                    blockEnd = -1;
+                }
             }
-            if (lines[i].match(endRe) && currentBlockStart !== -1) {
-                blocks.push({
-                    startLine: currentBlockStart,
-                    endLine: i,
-                    numColumns: currentNumCols
-                });
-                currentBlockStart = -1;
-                currentNumCols = 0;
+
+            if (inBlock) {
+                // This element is inside a columns block, hide it
+                el.addClass('live-columns-marker-hidden');
             }
-        }
-
-        // Find which block (if any) contains this element
-        let columnsStartLine = -1;
-        let columnsEndLine = -1;
-        let numColumns = 0;
-
-        for (const block of blocks) {
-            // Check if element's line range overlaps with this block
-            // Element is "in" a block if its start line is within or at the block's start
-            if (elStart >= block.startLine && elStart <= block.endLine) {
-                columnsStartLine = block.startLine;
-                columnsEndLine = block.endLine;
-                numColumns = block.numColumns;
-                break;
-            }
-        }
-
-        // No columns block found for this element
-        if (columnsStartLine === -1 || columnsEndLine === -1) {
             return;
         }
 
-        // If this element starts AFTER the columns:start marker but still inside
-        // the block range, hide it (it's internal content rendered by the main widget)
-        if (elStart > columnsStartLine && elStart <= columnsEndLine) {
-            el.addClass('live-columns-marker-hidden');
-            return;
-        }
-
-        // Only render if this element is exactly at the block start
-        if (elStart !== columnsStartLine) {
-            return;
-        }
-
+        // This element contains a columns:start marker - render the columns
+        const numColumns = parseInt(startMatch[1], 10);
         if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) {
             return;
         }
 
+        // Find the complete block in the document starting from this element
+        let blockEndLine = -1;
+        for (let i = elStart; i < lines.length; i++) {
+            if (lines[i].match(endRe)) {
+                blockEndLine = i;
+                break;
+            }
+        }
+
+        if (blockEndLine === -1) {
+            // No end marker found
+            return;
+        }
+
         // Extract body content between markers
-        const bodyLines = lines.slice(columnsStartLine + 1, columnsEndLine);
+        const bodyLines = lines.slice(elStart + 1, blockEndLine);
         const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
         const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
         let colors: string[] = [];
