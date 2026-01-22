@@ -2,9 +2,11 @@
 
 Live Columns allows you to create multi-column layouts visually. Lets you insert, edit, and style columns directly in the Live Preview mode. 
 
-![Details of the plugin](images/details.png)
 
 ![Demo of the plugin](images/demo.png)
+
+![Details of the plugin](images/details.png)
+
 
 ## Key Features
 
