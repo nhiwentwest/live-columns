@@ -314,7 +314,7 @@ export default class LiveColumnsPlugin extends Plugin {
         this.addCommand({
             id: 'insert-columns-2',
             name: 'Insert 2 columns',
-            editorCallback: (editor: Editor, view: MarkdownView) => {
+            editorCallback: (editor: Editor) => {
                 this.insertColumns(editor, 2);
             },
             hotkeys: [{ modifiers: ['Mod', 'Shift'], key: '2' }]
@@ -324,7 +324,7 @@ export default class LiveColumnsPlugin extends Plugin {
         this.addCommand({
             id: 'insert-columns-3',
             name: 'Insert 3 columns',
-            editorCallback: (editor: Editor, view: MarkdownView) => {
+            editorCallback: (editor: Editor) => {
                 this.insertColumns(editor, 3);
             },
             hotkeys: [{ modifiers: ['Mod', 'Shift'], key: '3' }]
@@ -334,7 +334,7 @@ export default class LiveColumnsPlugin extends Plugin {
         this.addCommand({
             id: 'insert-columns-4',
             name: 'Insert 4 columns',
-            editorCallback: (editor: Editor, view: MarkdownView) => {
+            editorCallback: (editor: Editor) => {
                 this.insertColumns(editor, 4);
             },
             hotkeys: [{ modifiers: ['Mod', 'Shift'], key: '4' }]
@@ -344,7 +344,7 @@ export default class LiveColumnsPlugin extends Plugin {
         this.addCommand({
             id: 'insert-columns',
             name: 'Insert columns...',
-            editorCallback: (editor: Editor, view: MarkdownView) => {
+            editorCallback: (editor: Editor) => {
                 this.insertColumns(editor, 2);
                 new Notice('Inserted 2 columns. Use Ctrl+P for more options.');
             },
