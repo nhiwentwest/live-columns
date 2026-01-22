@@ -546,7 +546,7 @@ export default class LiveColumnsPlugin extends Plugin {
             break;
         }
 
-        let bodyText = bodyLines.join('\n').trim();
+        let bodyText = bodyLines.join('\n');
 
         // Split by separator
         const sepRe = /^---\s*col\s*---$/im;

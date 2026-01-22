@@ -775,7 +775,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       }
       break;
     }
-    let bodyText = bodyLines.join("\n").trim();
+    let bodyText = bodyLines.join("\n");
     const sepRe = /^---\s*col\s*---$/im;
     const parts = bodyText.split(sepRe);
     const container = document.createElement("div");
