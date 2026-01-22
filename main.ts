@@ -425,121 +425,132 @@ export default class LiveColumnsPlugin extends Plugin {
     /**
      * Post-processor for Reading mode
      * Transforms marker-based columns into layout
-     * Uses ctx.getSectionInfo(el).text to read raw source (which still has %% markers)
      * 
-     * ELEMENT-CENTRIC APPROACH: Check if THIS element's lines contain column markers
+     * Uses document-level slice approach for accurate block detection.
      */
     columnsPostProcessor(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
         const info = ctx.getSectionInfo(el);
-        if (!info?.text) {
-            return;
-        }
+        if (!info?.text) return;
 
-        const fullText = info.text;
-        const lines = fullText.split('\n');
+        // Get full document lines
+        const docLines = info.text.split('\n');
         const elStart = info.lineStart;
         const elEnd = info.lineEnd;
 
-        // Get only THIS element's lines
-        const elLines = lines.slice(elStart, elEnd + 1);
-        const elText = elLines.join('\n');
-
-        // Check if ANY line in this element's range contains a columns:start marker
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
-        // Check the element text directly for a columns:start marker
-        const startMatch = elText.match(startRe);
+        // Check if this element's first line contains a columns:start marker
+        const firstLine = docLines[elStart] || '';
+        const startMatch = firstLine.match(startRe);
 
-        // If no start marker in this element, check if it needs to be hidden
-        if (!startMatch) {
-            // Check if element text is INSIDE a columns block (contains col separator or content
-            // but doesn't contain start marker and doesn't contain end marker alone)
-            // We need to find if any block in the FULL document contains this element
-            let inBlock = false;
-            let blockStart = -1;
-            let blockEnd = -1;
+        if (startMatch) {
+            // This element starts a columns block - find the end and render
+            const numColumns = parseInt(startMatch[1], 10);
+            if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) return;
 
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].match(startRe) && blockStart === -1) {
-                    blockStart = i;
+            // Find the matching end marker in document
+            let blockEndLine = -1;
+            for (let i = elStart + 1; i < docLines.length; i++) {
+                if (endRe.test(docLines[i])) {
+                    blockEndLine = i;
+                    break;
                 }
-                if (lines[i].match(endRe) && blockStart !== -1) {
-                    blockEnd = i;
-                    // Check if element's start line is inside this block (exclusive of start, inclusive of end)
-                    if (elStart > blockStart && elStart <= blockEnd) {
-                        inBlock = true;
-                        break;
+            }
+
+            if (blockEndLine === -1) return; // No end marker found
+
+            // Extract block content using document-level slice (NOT elementLines!)
+            const blockLines = docLines.slice(elStart + 1, blockEndLine);
+
+            // Render the columns
+            this.renderColumnsFromLines(el, blockLines, numColumns);
+
+            // FIX: Preserve text that appears AFTER columns:end but within the same element
+            if (blockEndLine < elEnd) {
+                const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
+                if (trailingLines.length > 0) {
+                    const trailingContainer = document.createElement('div');
+                    trailingContainer.className = 'live-columns-trailing-content';
+                    trailingLines.forEach(line => {
+                        if (line.trim()) {
+                            const p = document.createElement('p');
+                            p.innerText = line;
+                            trailingContainer.appendChild(p);
+                        }
+                    });
+                    if (trailingContainer.hasChildNodes()) {
+                        el.appendChild(trailingContainer);
                     }
-                    // Reset for next block
-                    blockStart = -1;
-                    blockEnd = -1;
                 }
             }
-
-            if (inBlock) {
-                el.addClass('live-columns-marker-hidden');
-            }
             return;
         }
 
-        // This element contains a columns:start marker - find where in elText it is
-        // and extract content from there
-        const markerIndex = elText.indexOf(startMatch[0]);
+        // This element doesn't start a columns block
+        // Check if it falls STRICTLY within a columns block range - if so, hide it
 
-        // This element contains a columns:start marker - render the columns
-        const numColumns = parseInt(startMatch[1], 10);
-        if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) {
-            return;
-        }
-
-        // Extract content after the start marker (from elText)
-        const afterMarker = elText.substring(markerIndex + startMatch[0].length);
-
-        // Find end marker in the remaining text (could be in elText or in fullText)
-        let bodyText = '';
-        const endMatch = afterMarker.match(endRe);
-        if (endMatch) {
-            // End marker is in this element - extract body between markers
-            bodyText = afterMarker.substring(0, afterMarker.indexOf(endMatch[0]));
-        } else {
-            // End marker is in a later part of the document - use afterMarker + rest of document
-            // Find end marker in full document starting from elEnd
-            const restOfDoc = lines.slice(elEnd + 1).join('\n');
-            const restEndMatch = restOfDoc.match(endRe);
-            if (restEndMatch) {
-                bodyText = afterMarker + '\n' + restOfDoc.substring(0, restOfDoc.indexOf(restEndMatch[0]));
-            } else {
-                // No end marker found
-                return;
+        // Find all column blocks in the document
+        let currentBlockStart = -1;
+        for (let i = 0; i < docLines.length; i++) {
+            if (startRe.test(docLines[i])) {
+                currentBlockStart = i;
+            }
+            if (endRe.test(docLines[i]) && currentBlockStart !== -1) {
+                // Check if this element falls STRICTLY within this block
+                // elStart > currentBlockStart: element starts after the start marker line
+                // elEnd <= i: element ends at or before the end marker line
+                if (elStart > currentBlockStart && elEnd <= i) {
+                    el.addClass('live-columns-marker-hidden');
+                    return;
+                }
+                currentBlockStart = -1;
             }
         }
 
-        // Parse metadata from bodyText
-        const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/im;
-        const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/im;
+        // Element is not inside any columns block - leave it visible
+    }
+
+    /**
+     * Helper method to render columns from block content lines
+     */
+    private renderColumnsFromLines(el: HTMLElement, blockLines: string[], numColumns: number) {
+        const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
+        const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
+        const sepRe = /^---\s*col\s*---$/im;
+
         let colors: string[] = [];
         let borders: string[] = [];
 
-        // Extract colors if present
-        const colorMatchBody = bodyText.match(colorRe);
-        if (colorMatchBody) {
-            colors = colorMatchBody[1].split('|').map(c => c.trim());
-            bodyText = bodyText.replace(colorRe, '');
+        // Consume optional metadata lines at the top (order-independent, skipping blanks)
+        let idx = 0;
+        while (idx < blockLines.length) {
+            const line = blockLines[idx].trim();
+            if (!line) {
+                idx += 1;
+                continue;
+            }
+
+            const colorMatch = line.match(colorRe);
+            if (colorMatch) {
+                colors = colorMatch[1].split('|').map(c => c.trim());
+                blockLines.splice(idx, 1);
+                continue;
+            }
+
+            const borderMatch = line.match(borderRe);
+            if (borderMatch) {
+                borders = borderMatch[1].split('|').map(c => c.trim());
+                blockLines.splice(idx, 1);
+                continue;
+            }
+
+            break;
         }
 
-        // Extract borders if present
-        const borderMatchBody = bodyText.match(borderRe);
-        if (borderMatchBody) {
-            borders = borderMatchBody[1].split('|').map(c => c.trim());
-            bodyText = bodyText.replace(borderRe, '');
-        }
-
-        // Clean up bodyText
-        bodyText = bodyText.trim();
+        const bodyText = blockLines.join('\n').trim();
 
         // Split by separator
-        const sepRe = /^---\s*col\s*---$/im;
         const parts = bodyText.split(sepRe);
 
         // Build columns container
@@ -568,13 +579,18 @@ export default class LiveColumnsPlugin extends Plugin {
                 ph.innerText = `(Column ${ci + 1})`;
                 colDiv.appendChild(ph);
             } else {
-                // Render content - split by newlines for simple paragraphs
+                // Render content - split by newlines for paragraphs
+                // FIXED: Also render empty lines as line breaks to preserve spacing
                 const contentLines = contentText.split('\n');
-                contentLines.forEach(line => {
+                contentLines.forEach((line, idx) => {
                     if (line.trim()) {
                         const p = document.createElement('p');
                         p.innerText = line;
                         colDiv.appendChild(p);
+                    } else if (idx > 0 && idx < contentLines.length - 1) {
+                        // Empty line in the middle - add a line break for spacing
+                        const br = document.createElement('br');
+                        colDiv.appendChild(br);
                     }
                 });
             }
@@ -582,7 +598,7 @@ export default class LiveColumnsPlugin extends Plugin {
             container.appendChild(colDiv);
         }
 
-        // Replace element content with columns
+        // Clear element content and append columns container
         while (el.firstChild) {
             el.removeChild(el.firstChild);
         }

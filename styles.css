@@ -10,6 +10,11 @@
 	margin: 12px 0;
 }
 
+.live-columns-source-hidden {
+	display: none;
+}
+
+
 /* Column counts */
 .live-columns-2 {
 	grid-template-columns: repeat(2, 1fr);

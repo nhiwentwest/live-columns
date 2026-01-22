@@ -689,83 +689,100 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
   /**
    * Post-processor for Reading mode
    * Transforms marker-based columns into layout
-   * Uses ctx.getSectionInfo(el).text to read raw source (which still has %% markers)
    * 
-   * ELEMENT-CENTRIC APPROACH: Check if THIS element's lines contain column markers
+   * Uses document-level slice approach for accurate block detection.
    */
   columnsPostProcessor(el, ctx) {
-    var _a, _b;
     const info = ctx.getSectionInfo(el);
-    if (!(info == null ? void 0 : info.text)) {
+    if (!(info == null ? void 0 : info.text))
       return;
-    }
-    const fullText = info.text;
-    const lines = fullText.split("\n");
+    const docLines = info.text.split("\n");
     const elStart = info.lineStart;
     const elEnd = info.lineEnd;
-    const elLines = lines.slice(elStart, elEnd + 1);
-    const elText = elLines.join("\n");
     const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
     const endRe = /%%\s*columns:end\s*%%/i;
-    const startMatch = elText.match(startRe);
-    if (!startMatch) {
-      let inBlock = false;
-      let blockStart = -1;
-      let blockEnd = -1;
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].match(startRe) && blockStart === -1) {
-          blockStart = i;
-        }
-        if (lines[i].match(endRe) && blockStart !== -1) {
-          blockEnd = i;
-          if (elStart > blockStart && elStart <= blockEnd) {
-            inBlock = true;
-            break;
-          }
-          blockStart = -1;
-          blockEnd = -1;
-        }
-      }
-      if (inBlock) {
-        el.addClass("live-columns-marker-hidden");
-      }
-      return;
-    }
-    const markerIndex = elText.indexOf(startMatch[0]);
-    const numColumns = parseInt(startMatch[1], 10);
-    if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) {
-      return;
-    }
-    const afterMarker = elText.substring(markerIndex + startMatch[0].length);
-    let bodyText = "";
-    const endMatch = afterMarker.match(endRe);
-    if (endMatch) {
-      bodyText = afterMarker.substring(0, afterMarker.indexOf(endMatch[0]));
-    } else {
-      const restOfDoc = lines.slice(elEnd + 1).join("\n");
-      const restEndMatch = restOfDoc.match(endRe);
-      if (restEndMatch) {
-        bodyText = afterMarker + "\n" + restOfDoc.substring(0, restOfDoc.indexOf(restEndMatch[0]));
-      } else {
+    const firstLine = docLines[elStart] || "";
+    const startMatch = firstLine.match(startRe);
+    if (startMatch) {
+      const numColumns = parseInt(startMatch[1], 10);
+      if (isNaN(numColumns) || numColumns < 1 || numColumns > 6)
         return;
+      let blockEndLine = -1;
+      for (let i = elStart + 1; i < docLines.length; i++) {
+        if (endRe.test(docLines[i])) {
+          blockEndLine = i;
+          break;
+        }
+      }
+      if (blockEndLine === -1)
+        return;
+      const blockLines = docLines.slice(elStart + 1, blockEndLine);
+      this.renderColumnsFromLines(el, blockLines, numColumns);
+      if (blockEndLine < elEnd) {
+        const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
+        if (trailingLines.length > 0) {
+          const trailingContainer = document.createElement("div");
+          trailingContainer.className = "live-columns-trailing-content";
+          trailingLines.forEach((line) => {
+            if (line.trim()) {
+              const p = document.createElement("p");
+              p.innerText = line;
+              trailingContainer.appendChild(p);
+            }
+          });
+          if (trailingContainer.hasChildNodes()) {
+            el.appendChild(trailingContainer);
+          }
+        }
+      }
+      return;
+    }
+    let currentBlockStart = -1;
+    for (let i = 0; i < docLines.length; i++) {
+      if (startRe.test(docLines[i])) {
+        currentBlockStart = i;
+      }
+      if (endRe.test(docLines[i]) && currentBlockStart !== -1) {
+        if (elStart > currentBlockStart && elEnd <= i) {
+          el.addClass("live-columns-marker-hidden");
+          return;
+        }
+        currentBlockStart = -1;
       }
     }
-    const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/im;
-    const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/im;
+  }
+  /**
+   * Helper method to render columns from block content lines
+   */
+  renderColumnsFromLines(el, blockLines, numColumns) {
+    var _a, _b;
+    const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
+    const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
+    const sepRe = /^---\s*col\s*---$/im;
     let colors = [];
     let borders = [];
-    const colorMatchBody = bodyText.match(colorRe);
-    if (colorMatchBody) {
-      colors = colorMatchBody[1].split("|").map((c) => c.trim());
-      bodyText = bodyText.replace(colorRe, "");
+    let idx = 0;
+    while (idx < blockLines.length) {
+      const line = blockLines[idx].trim();
+      if (!line) {
+        idx += 1;
+        continue;
+      }
+      const colorMatch = line.match(colorRe);
+      if (colorMatch) {
+        colors = colorMatch[1].split("|").map((c) => c.trim());
+        blockLines.splice(idx, 1);
+        continue;
+      }
+      const borderMatch = line.match(borderRe);
+      if (borderMatch) {
+        borders = borderMatch[1].split("|").map((c) => c.trim());
+        blockLines.splice(idx, 1);
+        continue;
+      }
+      break;
     }
-    const borderMatchBody = bodyText.match(borderRe);
-    if (borderMatchBody) {
-      borders = borderMatchBody[1].split("|").map((c) => c.trim());
-      bodyText = bodyText.replace(borderRe, "");
-    }
-    bodyText = bodyText.trim();
-    const sepRe = /^---\s*col\s*---$/im;
+    const bodyText = blockLines.join("\n").trim();
     const parts = bodyText.split(sepRe);
     const container = document.createElement("div");
     container.className = `live-columns-container live-columns-${numColumns}`;
@@ -789,11 +806,14 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
         colDiv.appendChild(ph);
       } else {
         const contentLines = contentText.split("\n");
-        contentLines.forEach((line) => {
+        contentLines.forEach((line, idx2) => {
           if (line.trim()) {
             const p = document.createElement("p");
             p.innerText = line;
             colDiv.appendChild(p);
+          } else if (idx2 > 0 && idx2 < contentLines.length - 1) {
+            const br = document.createElement("br");
+            colDiv.appendChild(br);
           }
         });
       }
