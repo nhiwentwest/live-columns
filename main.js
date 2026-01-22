@@ -707,7 +707,8 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     const elText = elLines.join("\n");
     const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
     const endRe = /%%\s*columns:end\s*%%/i;
-    const startMatch = elText.match(startRe);
+    const firstLine = lines[elStart] || "";
+    const startMatch = firstLine.match(startRe);
     if (!startMatch) {
       let inBlock = false;
       let blockStart = -1;

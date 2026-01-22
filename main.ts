@@ -444,11 +444,13 @@ export default class LiveColumnsPlugin extends Plugin {
         const elLines = lines.slice(elStart, elEnd + 1);
         const elText = elLines.join('\n');
 
-        // Check if this element contains a columns:start marker
+        // Check if this element's FIRST line contains a columns:start marker
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
-        const startMatch = elText.match(startRe);
+        // Check the first line of this element specifically
+        const firstLine = lines[elStart] || '';
+        const startMatch = firstLine.match(startRe);
 
         // If this element doesn't contain a start marker, check if it's inside a block
         if (!startMatch) {
