@@ -632,7 +632,7 @@ class ColorPickerModal extends Modal {
         contentEl.addClass('live-columns-color-picker');
 
         // Title
-        const title = contentEl.createEl('h3', {
+        contentEl.createEl('h3', {
             text: `Choose ${this.typeName} color`,
             cls: 'color-picker-title'
         });

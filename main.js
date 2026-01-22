@@ -836,7 +836,7 @@ var ColorPickerModal = class extends import_obsidian2.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("live-columns-color-picker");
-    const title = contentEl.createEl("h3", {
+    contentEl.createEl("h3", {
       text: `Choose ${this.typeName} color`,
       cls: "color-picker-title"
     });
