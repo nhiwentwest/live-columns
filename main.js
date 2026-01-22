@@ -372,8 +372,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     this.isSelectingColumn = false;
     this.columnClickHandler = null;
   }
-  async onload() {
-    console.log("Loading Live Columns plugin");
+  onload() {
     (0, import_obsidian2.addIcon)("live-columns", LIVE_COLUMNS_ICON);
     const ribbon = this.addRibbonIcon("live-columns", "Insert columns / colors", (evt) => {
       const menu = new import_obsidian2.Menu();
@@ -401,7 +400,6 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     this.registerCommands();
   }
   onunload() {
-    console.log("Unloading Live Columns plugin");
     this.exitColumnSelectionMode();
   }
   /**
@@ -607,24 +605,21 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       name: "Insert 2 columns",
       editorCallback: (editor) => {
         this.insertColumns(editor, 2);
-      },
-      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "2" }]
+      }
     });
     this.addCommand({
       id: "insert-columns-3",
       name: "Insert 3 columns",
       editorCallback: (editor) => {
         this.insertColumns(editor, 3);
-      },
-      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "3" }]
+      }
     });
     this.addCommand({
       id: "insert-columns-4",
       name: "Insert 4 columns",
       editorCallback: (editor) => {
         this.insertColumns(editor, 4);
-      },
-      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "4" }]
+      }
     });
     this.addCommand({
       id: "insert-columns",
@@ -632,8 +627,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       editorCallback: (editor) => {
         this.insertColumns(editor, 2);
         new import_obsidian2.Notice("Inserted 2 columns. Use Ctrl+P for more options.");
-      },
-      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "c" }]
+      }
     });
     this.addCommand({
       id: "change-column-color",
@@ -800,7 +794,9 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       }
       container.appendChild(colDiv);
     }
-    el.innerHTML = "";
+    while (el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
     el.appendChild(container);
   }
 };
@@ -815,46 +811,26 @@ var ColorPickerModal = class extends import_obsidian2.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("live-columns-color-picker");
-    const title = contentEl.createEl("h3", { text: `Choose ${this.typeName} color` });
-    title.style.marginTop = "0";
-    title.style.marginBottom = "16px";
-    title.style.textAlign = "center";
+    const title = contentEl.createEl("h3", {
+      text: `Choose ${this.typeName} color`,
+      cls: "color-picker-title"
+    });
     const grid = contentEl.createDiv({ cls: "color-grid" });
-    grid.style.display = "grid";
-    grid.style.gridTemplateColumns = "repeat(4, 1fr)";
-    grid.style.gap = "8px";
-    grid.style.padding = "8px";
     this.palette.forEach((p) => {
       const swatch = grid.createDiv({ cls: "color-swatch" });
-      swatch.style.width = "48px";
-      swatch.style.height = "48px";
-      swatch.style.borderRadius = "8px";
-      swatch.style.cursor = "pointer";
-      swatch.style.border = "2px solid var(--background-modifier-border)";
-      swatch.style.backgroundColor = p.color;
-      swatch.style.transition = "transform 0.1s, box-shadow 0.1s";
       swatch.title = p.name;
       if (p.token === "") {
-        swatch.style.background = "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)";
-        swatch.style.backgroundSize = "10px 10px";
-        swatch.style.backgroundPosition = "0 0, 0 5px, 5px -5px, -5px 0px";
+        swatch.addClass("color-swatch-default");
+      } else {
+        swatch.setCssProps({ "--swatch-color": p.color });
+        swatch.style.backgroundColor = p.color;
       }
-      swatch.addEventListener("mouseenter", () => {
-        swatch.style.transform = "scale(1.1)";
-        swatch.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
-      });
-      swatch.addEventListener("mouseleave", () => {
-        swatch.style.transform = "scale(1)";
-        swatch.style.boxShadow = "none";
-      });
       swatch.addEventListener("click", () => {
         this.onSelect(p.token, p.name);
         this.close();
       });
     });
     const footer = contentEl.createDiv({ cls: "color-picker-footer" });
-    footer.style.marginTop = "16px";
-    footer.style.textAlign = "center";
     const cancelBtn = footer.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.close());
   }

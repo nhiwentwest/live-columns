@@ -492,3 +492,44 @@
 		transition: none;
 	}
 }
+
+/* ============================================
+   Color Picker Modal
+   ============================================ */
+.live-columns-color-picker .color-picker-title {
+	margin-top: 0;
+	margin-bottom: 16px;
+	text-align: center;
+}
+
+.live-columns-color-picker .color-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 8px;
+	padding: 8px;
+}
+
+.live-columns-color-picker .color-swatch {
+	width: 48px;
+	height: 48px;
+	border-radius: 8px;
+	cursor: pointer;
+	border: 2px solid var(--background-modifier-border);
+	transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.live-columns-color-picker .color-swatch:hover {
+	transform: scale(1.1);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.live-columns-color-picker .color-swatch-default {
+	background: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+	background-size: 10px 10px;
+	background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+}
+
+.live-columns-color-picker .color-picker-footer {
+	margin-top: 16px;
+	text-align: center;
+}
