@@ -736,9 +736,6 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     if (columnsStartLine === -1 || columnsEndLine === -1) {
       return;
     }
-    if (elEnd < columnsStartLine || elStart > columnsEndLine) {
-      return;
-    }
     if (elStart > columnsStartLine && elStart <= columnsEndLine) {
       el.addClass("live-columns-marker-hidden");
       return;

@@ -475,7 +475,8 @@ export default class LiveColumnsPlugin extends Plugin {
         let numColumns = 0;
 
         for (const block of blocks) {
-            // Check if element overlaps with this block
+            // Check if element's line range overlaps with this block
+            // Element is "in" a block if its start line is within or at the block's start
             if (elStart >= block.startLine && elStart <= block.endLine) {
                 columnsStartLine = block.startLine;
                 columnsEndLine = block.endLine;
@@ -489,22 +490,14 @@ export default class LiveColumnsPlugin extends Plugin {
             return;
         }
 
-        // (elStart/elEnd already defined above)
-
-        // If element is completely outside the columns block, leave it alone
-        if (elEnd < columnsStartLine || elStart > columnsEndLine) {
-            return;
-        }
-
-        // If this element starts at or after the columns:start marker line
-        // but is not the first line of the block, hide it (it's part of columns content)
+        // If this element starts AFTER the columns:start marker but still inside
+        // the block range, hide it (it's internal content rendered by the main widget)
         if (elStart > columnsStartLine && elStart <= columnsEndLine) {
             el.addClass('live-columns-marker-hidden');
             return;
         }
 
-        // This element is the first one (starts at columnsStartLine)
-        // Render the columns here
+        // Only render if this element is exactly at the block start
         if (elStart !== columnsStartLine) {
             return;
         }
