@@ -699,27 +699,43 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     }
     const fullText = info.text;
     const lines = fullText.split("\n");
+    const elStart = info.lineStart;
+    const elEnd = info.lineEnd;
     const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
     const endRe = /%%\s*columns:end\s*%%/i;
+    const blocks = [];
+    let currentBlockStart = -1;
+    let currentNumCols = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const startMatch = lines[i].match(startRe);
+      if (startMatch && currentBlockStart === -1) {
+        currentBlockStart = i;
+        currentNumCols = parseInt(startMatch[1], 10);
+      }
+      if (lines[i].match(endRe) && currentBlockStart !== -1) {
+        blocks.push({
+          startLine: currentBlockStart,
+          endLine: i,
+          numColumns: currentNumCols
+        });
+        currentBlockStart = -1;
+        currentNumCols = 0;
+      }
+    }
     let columnsStartLine = -1;
     let columnsEndLine = -1;
     let numColumns = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const startMatch = lines[i].match(startRe);
-      if (startMatch && columnsStartLine === -1) {
-        columnsStartLine = i;
-        numColumns = parseInt(startMatch[1], 10);
-      }
-      if (lines[i].match(endRe) && columnsStartLine !== -1) {
-        columnsEndLine = i;
+    for (const block of blocks) {
+      if (elStart >= block.startLine && elStart <= block.endLine) {
+        columnsStartLine = block.startLine;
+        columnsEndLine = block.endLine;
+        numColumns = block.numColumns;
         break;
       }
     }
     if (columnsStartLine === -1 || columnsEndLine === -1) {
       return;
     }
-    const elStart = info.lineStart;
-    const elEnd = info.lineEnd;
     if (elEnd < columnsStartLine || elStart > columnsEndLine) {
       return;
     }

@@ -435,35 +435,61 @@ export default class LiveColumnsPlugin extends Plugin {
 
         const fullText = info.text;
         const lines = fullText.split('\n');
+        const elStart = info.lineStart;
+        const elEnd = info.lineEnd;
 
-        // Find the columns block markers with their line numbers
+        // Find ALL columns blocks in the document
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
+        interface ColumnsBlockInfo {
+            startLine: number;
+            endLine: number;
+            numColumns: number;
+        }
+        const blocks: ColumnsBlockInfo[] = [];
+
+        let currentBlockStart = -1;
+        let currentNumCols = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+            const startMatch = lines[i].match(startRe);
+            if (startMatch && currentBlockStart === -1) {
+                currentBlockStart = i;
+                currentNumCols = parseInt(startMatch[1], 10);
+            }
+            if (lines[i].match(endRe) && currentBlockStart !== -1) {
+                blocks.push({
+                    startLine: currentBlockStart,
+                    endLine: i,
+                    numColumns: currentNumCols
+                });
+                currentBlockStart = -1;
+                currentNumCols = 0;
+            }
+        }
+
+        // Find which block (if any) contains this element
         let columnsStartLine = -1;
         let columnsEndLine = -1;
         let numColumns = 0;
 
-        for (let i = 0; i < lines.length; i++) {
-            const startMatch = lines[i].match(startRe);
-            if (startMatch && columnsStartLine === -1) {
-                columnsStartLine = i;
-                numColumns = parseInt(startMatch[1], 10);
-            }
-            if (lines[i].match(endRe) && columnsStartLine !== -1) {
-                columnsEndLine = i;
+        for (const block of blocks) {
+            // Check if element overlaps with this block
+            if (elStart >= block.startLine && elStart <= block.endLine) {
+                columnsStartLine = block.startLine;
+                columnsEndLine = block.endLine;
+                numColumns = block.numColumns;
                 break;
             }
         }
 
-        // No columns block found
+        // No columns block found for this element
         if (columnsStartLine === -1 || columnsEndLine === -1) {
             return;
         }
 
-        // Check if this element is within the columns block
-        const elStart = info.lineStart;
-        const elEnd = info.lineEnd;
+        // (elStart/elEnd already defined above)
 
         // If element is completely outside the columns block, leave it alone
         if (elEnd < columnsStartLine || elStart > columnsEndLine) {
