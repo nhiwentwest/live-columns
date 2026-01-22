@@ -105,7 +105,7 @@ var ColumnsWidget = class extends import_view.WidgetType {
   }
   /**
    * Render markdown content as HTML
-   * Uses simple rendering - for full markdown, would need Obsidian's MarkdownRenderer
+   * FIXED: Prevents adding extra <br> after </div> blocks to avoid double spacing
    */
   renderContent(text) {
     if (!text.trim()) {
@@ -114,24 +114,22 @@ var ColumnsWidget = class extends import_view.WidgetType {
     let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/^(#{1,6})\s+(.+)$/gm, (_, hashes, content) => {
       const level = hashes.length;
       return `<h${level}>${content}</h${level}>`;
-    }).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>").replace(/`(.+?)`/g, "<code>$1</code>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>').replace(/^[-*]\s+(.+)$/gm, "<li>$1</li>").replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>").replace(/((?:<li>.+?<\/li>\n?)+)/g, "<ul>$1</ul>").replace(/^(?!<[hulo])(.+)$/gm, "<div>$1</div>").replace(/\n/g, "<br>");
+    }).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>").replace(/`(.+?)`/g, "<code>$1</code>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>').replace(/^[-*]\s+(.+)$/gm, "<li>$1</li>").replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>").replace(/((?:<li>.+?<\/li>\n?)+)/g, "<ul>$1</ul>").replace(/^(?!<[hulo])(.+)$/gm, "<div>$1</div>");
+    html = html.replace(/<\/div>\n/g, "</div>");
+    html = html.replace(/\n/g, "<br>");
     return html;
   }
   /**
    * Extract plain text/markdown from HTML
-   * FIXED: Now properly handles div/p tags created by Enter key in contentEditable
+   * FIXED: Improved logic to handle div/br combinations without adding extra lines
    */
   extractContent(el) {
     const clone = el.cloneNode(true);
-    let text = clone.innerHTML.replace(/<div[^>]*>/gi, "\n").replace(/<\/div>/gi, "").replace(/<p[^>]*>/gi, "\n").replace(/<\/p>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<h(\d)>(.+?)<\/h\1>/gi, (_, level, content) => {
+    let text = clone.innerHTML.replace(/<h(\d)>(.+?)<\/h\1>/gi, (_, level, content) => {
       return "#".repeat(parseInt(level)) + " " + content + "\n";
-    }).replace(/<strong>(.+?)<\/strong>/gi, "**$1**").replace(/<em>(.+?)<\/em>/gi, "*$1*").replace(/<code>(.+?)<\/code>/gi, "`$1`").replace(/<a href="([^"]+)">(.+?)<\/a>/gi, "[$2]($1)").replace(/<li>(.+?)<\/li>/gi, "- $1\n").replace(/<\/?[uo]l>/gi, "").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/^\n/, "").replace(/\n{3,}/g, "\n\n").trim();
+    }).replace(/<strong>(.+?)<\/strong>/gi, "**$1**").replace(/<b>(.+?)<\/b>/gi, "**$1**").replace(/<em>(.+?)<\/em>/gi, "*$1*").replace(/<i>(.+?)<\/i>/gi, "*$1*").replace(/<code>(.+?)<\/code>/gi, "`$1`").replace(/<a href="([^"]+)">(.+?)<\/a>/gi, "[$2]($1)").replace(/<li>(.+?)<\/li>/gi, "- $1\n").replace(/<\/?[uo]l>/gi, "").replace(/<div[^>]*><br><\/div>/gi, "\n").replace(/<div[^>]*>/gi, "\n").replace(/<\/div>/gi, "").replace(/<p[^>]*>/gi, "\n").replace(/<\/p>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/^\n+/, "").replace(/\n+$/, "").replace(/\n{3,}/g, "\n\n").trim();
     return text;
   }
-  /**
-   * Sync all column contents back to the markdown source
-   * FIXED: Now passes BOTH colors and borders to buildColumnsMarkdown
-   */
   syncToSource() {
     if (this.isUpdating || !this.container)
       return;
@@ -159,7 +157,6 @@ var ColumnsWidget = class extends import_view.WidgetType {
         newContents,
         this.block.colors,
         this.block.borders
-        // <-- THIS WAS MISSING!
       );
       const transaction = this.view.state.update({
         changes: {
@@ -176,9 +173,7 @@ var ColumnsWidget = class extends import_view.WidgetType {
       this.isUpdating = false;
     }
   }
-  /**
-   * Handle keyboard navigation between columns
-   */
+  // ... (Giữ nguyên handleKeydown, eq, ignoreEvent, destroy) ...
   handleKeydown(e, columnIndex) {
     var _a;
     if (e.key === "a" && (e.metaKey || e.ctrlKey)) {
@@ -669,10 +664,16 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
   }
   /**
    * Insert a column layout at the current cursor position
+   * FIXED: Improved cursor positioning and line breaks
    */
   insertColumns(editor, numColumns) {
     const cursor = editor.getCursor();
+    const lineText = editor.getLine(cursor.line);
+    const needsKpPre = lineText.trim().length > 0;
     const lines = [];
+    if (needsKpPre)
+      lines.push("");
+    lines.push("");
     lines.push(`%% columns:start ${numColumns} %%`);
     for (let i = 0; i < numColumns; i++) {
       lines.push(`Column ${i + 1}`);
@@ -681,12 +682,15 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       }
     }
     lines.push("%% columns:end %%");
-    const template = ["", "", ...lines, "", ""].join("\n");
+    lines.push("");
+    const template = lines.join("\n");
     editor.replaceRange(template, cursor);
+    const numLinesInserted = lines.length;
     editor.setCursor({
-      line: cursor.line + 3,
+      line: cursor.line + numLinesInserted - 1 + (needsKpPre ? 0 : 0),
       ch: 0
     });
+    editor.focus();
   }
   /**
    * Post-processor for Reading mode

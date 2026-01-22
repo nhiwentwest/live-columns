@@ -66,6 +66,9 @@ function buildColumnsMarkdown(numColumns: number, columns: string[], colors?: st
 /**
  * Widget that renders the columns container with proper WYSIWYG editing
  */
+/**
+ * Widget that renders the columns container with proper WYSIWYG editing
+ */
 class ColumnsWidget extends WidgetType {
     private container: HTMLElement | null = null;
     private isUpdating = false;
@@ -120,7 +123,7 @@ class ColumnsWidget extends WidgetType {
             this.handleKeydown(e as KeyboardEvent, index);
         });
 
-        // Only sync when user leaves the column (blur) - no interruption while typing
+        // Only sync when user leaves the column (blur)
         colDiv.addEventListener('blur', () => {
             this.syncToSource();
         });
@@ -130,11 +133,11 @@ class ColumnsWidget extends WidgetType {
 
     /**
      * Render markdown content as HTML
-     * Uses simple rendering - for full markdown, would need Obsidian's MarkdownRenderer
+     * FIXED: Prevents adding extra <br> after </div> blocks to avoid double spacing
      */
     private renderContent(text: string): string {
         if (!text.trim()) {
-            return '<br>';
+            return '<br>'; // Return clean break for empty columns to allow clicking
         }
 
         let html = text
@@ -162,45 +165,36 @@ class ColumnsWidget extends WidgetType {
             // Wrap consecutive list items
             .replace(/((?:<li>.+?<\/li>\n?)+)/g, '<ul>$1</ul>')
             // Paragraphs (lines not already wrapped)
-            .replace(/^(?!<[hulo])(.+)$/gm, '<div>$1</div>')
-            // Line breaks
-            .replace(/\n/g, '<br>');
+            .replace(/^(?!<[hulo])(.+)$/gm, '<div>$1</div>');
 
-        // The original logic for wrapping <li> in <ul> is now handled by the new regex above.
-        // This block is no longer needed.
-        // html = html.replace(/(<li>.*?<\/li>)(?:<br>)?/g, '$1');
-        // if (html.includes('<li>')) {
-        //     html = html.replace(/(<li>[\s\S]*?<\/li>)+/g, '<ul>$&</ul>');
-        // }
+        // KEY FIX: Remove newline characters that immediately follow a closing div.
+        // The div tag itself provides the visual line break.
+        html = html.replace(/<\/div>\n/g, '</div>');
+
+        // Now safe to convert remaining newlines (e.g. within paragraphs or double breaks) to <br>
+        html = html.replace(/\n/g, '<br>');
 
         return html;
     }
 
     /**
      * Extract plain text/markdown from HTML
-     * FIXED: Now properly handles div/p tags created by Enter key in contentEditable
+     * FIXED: Improved logic to handle div/br combinations without adding extra lines
      */
     private extractContent(el: HTMLElement): string {
-        // Clone to avoid modifying the original
         const clone = el.cloneNode(true) as HTMLElement;
 
-        // Convert back to markdown-ish text
         let text = clone.innerHTML
-            // DIV and P tags become newlines (contentEditable creates these on Enter)
-            .replace(/<div[^>]*>/gi, '\n')
-            .replace(/<\/div>/gi, '')
-            .replace(/<p[^>]*>/gi, '\n')
-            .replace(/<\/p>/gi, '')
-            // Line breaks
-            .replace(/<br\s*\/?>/gi, '\n')
             // Headings
             .replace(/<h(\d)>(.+?)<\/h\1>/gi, (_, level, content) => {
                 return '#'.repeat(parseInt(level)) + ' ' + content + '\n';
             })
             // Bold
             .replace(/<strong>(.+?)<\/strong>/gi, '**$1**')
+            .replace(/<b>(.+?)<\/b>/gi, '**$1**')
             // Italic
             .replace(/<em>(.+?)<\/em>/gi, '*$1*')
+            .replace(/<i>(.+?)<\/i>/gi, '*$1*')
             // Code
             .replace(/<code>(.+?)<\/code>/gi, '`$1`')
             // Links
@@ -209,25 +203,39 @@ class ColumnsWidget extends WidgetType {
             .replace(/<li>(.+?)<\/li>/gi, '- $1\n')
             // Remove ul/ol wrappers
             .replace(/<\/?[uo]l>/gi, '')
-            // Remove other tags
+
+            // DIV handling: 
+            // 1. <div><br></div> is an empty line -> \n
+            .replace(/<div[^>]*><br><\/div>/gi, '\n')
+            // 2. <div>Content</div> is a line -> \nContent
+            .replace(/<div[^>]*>/gi, '\n')
+            .replace(/<\/div>/gi, '')
+
+            // P tags
+            .replace(/<p[^>]*>/gi, '\n')
+            .replace(/<\/p>/gi, '')
+
+            // Line breaks
+            .replace(/<br\s*\/?>/gi, '\n')
+
+            // Strip remaining tags
             .replace(/<[^>]+>/g, '')
+
             // Decode entities
             .replace(/&lt;/g, '<')
             .replace(/&gt;/g, '>')
             .replace(/&amp;/g, '&')
             .replace(/&nbsp;/g, ' ')
-            // Clean up: remove leading newline and extra newlines
-            .replace(/^\n/, '')
-            .replace(/\n{3,}/g, '\n\n')
+
+            // Cleanup whitespace
+            .replace(/^\n+/, '')      // Remove leading newlines
+            .replace(/\n+$/, '')      // Remove trailing newlines
+            .replace(/\n{3,}/g, '\n\n') // Max 2 consecutive newlines
             .trim();
 
         return text;
     }
 
-    /**
-     * Sync all column contents back to the markdown source
-     * FIXED: Now passes BOTH colors and borders to buildColumnsMarkdown
-     */
     private syncToSource() {
         if (this.isUpdating || !this.container) return;
         this.isUpdating = true;
@@ -241,6 +249,7 @@ class ColumnsWidget extends WidgetType {
                 newContents.push(content);
             });
 
+            // Check if anything actually changed to avoid unnecessary updates
             const hasChanges = newContents.some((content, i) =>
                 content !== (this.columnContents[i] || '')
             );
@@ -256,15 +265,13 @@ class ColumnsWidget extends WidgetType {
             const from = Math.max(0, Math.min(this.block.startPos, doc.length));
             const to = Math.max(from, Math.min(this.block.endPos, doc.length));
 
-            // KEY FIX: Pass BOTH colors AND borders
             const newMarkdown = buildColumnsMarkdown(
                 this.block.numColumns,
                 newContents,
                 this.block.colors,
-                this.block.borders  // <-- THIS WAS MISSING!
+                this.block.borders
             );
 
-            // Dispatch transaction with proper annotation
             const transaction = this.view.state.update({
                 changes: {
                     from,
@@ -282,15 +289,11 @@ class ColumnsWidget extends WidgetType {
         }
     }
 
-    /**
-     * Handle keyboard navigation between columns
-     */
+    // ... (Giữ nguyên handleKeydown, eq, ignoreEvent, destroy) ...
     private handleKeydown(e: KeyboardEvent, columnIndex: number) {
-        // Handle Cmd+A (Mac) or Ctrl+A (Windows) - select all within column only
         if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             e.stopPropagation();
-
             const columns = this.container?.querySelectorAll('.live-column');
             const currentCol = columns?.[columnIndex] as HTMLElement;
             if (currentCol) {
@@ -303,7 +306,6 @@ class ColumnsWidget extends WidgetType {
             return;
         }
 
-        // Handle Tab navigation
         if (e.key === 'Tab' && this.container) {
             e.preventDefault();
             const columns = this.container.querySelectorAll('.live-column');
@@ -314,7 +316,6 @@ class ColumnsWidget extends WidgetType {
             const nextCol = columns[nextIndex] as HTMLElement;
             if (nextCol) {
                 nextCol.focus();
-                // Move cursor to end
                 const range = document.createRange();
                 range.selectNodeContents(nextCol);
                 range.collapse(false);
@@ -336,7 +337,7 @@ class ColumnsWidget extends WidgetType {
     }
 
     ignoreEvent(): boolean {
-        return true; // Let the widget handle its own events
+        return true;
     }
 
     destroy() {

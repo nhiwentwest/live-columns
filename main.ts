@@ -384,34 +384,48 @@ export default class LiveColumnsPlugin extends Plugin {
 
     /**
      * Insert a column layout at the current cursor position
+     * FIXED: Improved cursor positioning and line breaks
      */
     private insertColumns(editor: Editor, numColumns: number) {
         const cursor = editor.getCursor();
+        const lineText = editor.getLine(cursor.line);
 
-        // Build the column template
+        // Ensure we are on a clean block or separated properly
+        const needsKpPre = lineText.trim().length > 0;
+
         const lines: string[] = [];
-        lines.push(`%% columns:start ${numColumns} %%`);
 
+        // Add preceding newline if current line has text
+        if (needsKpPre) lines.push('');
+
+        // Blank line before block for safety
+        lines.push('');
+
+        lines.push(`%% columns:start ${numColumns} %%`);
         for (let i = 0; i < numColumns; i++) {
             lines.push(`Column ${i + 1}`);
             if (i < numColumns - 1) {
                 lines.push('--- col ---');
             }
         }
-
         lines.push('%% columns:end %%');
 
-        // Always pad with blank lines to avoid breaking markers
-        const template = ['', '', ...lines, '', ''].join('\n');
+        // Blank line after block for safety and cursor placement
+        lines.push('');
 
-        // Insert at cursor
+        const template = lines.join('\n');
         editor.replaceRange(template, cursor);
 
-        // Move cursor to first column content
+        // FIXED: Set cursor AFTER the block, not inside the hidden content.
+        const numLinesInserted = lines.length;
+
         editor.setCursor({
-            line: cursor.line + 3,
+            line: cursor.line + numLinesInserted - 1 + (needsKpPre ? 0 : 0),
             ch: 0
         });
+
+        // Focus editor to ensure cursor is active
+        editor.focus();
     }
 
     /**
