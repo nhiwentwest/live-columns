@@ -37,7 +37,7 @@ export default class LiveColumnsPlugin extends Plugin {
                 item.setTitle('Change border color...').setIcon('square').onClick(() => this.enterColumnSelectionMode('border'))
             );
             // @ts-ignore showAtMouseEvent exists
-            menu.showAtMouseEvent(evt as MouseEvent);
+            menu.showAtMouseEvent(evt);
         });
         ribbon.addClass('live-columns-ribbon');
 
@@ -424,84 +424,119 @@ export default class LiveColumnsPlugin extends Plugin {
 
     /**
      * Post-processor for Reading mode
-     * Updated: Fix text swallowing and reduce flickering
+     * FINAL FIX: Gets live text from Editor to avoid stale state (1-char lag).
      */
     columnsPostProcessor(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
         const info = ctx.getSectionInfo(el);
-        if (!info?.text) return;
+        if (!info) return;
 
-        const docLines = info.text.split('\n');
+        // 1. Get "live text" from Editor to avoid being 1 character behind
+        let docText = info.text || '';
+        const activeLeaf = this.app.workspace.getLeavesOfType('markdown').find(leaf =>
+            (leaf.view as MarkdownView).file?.path === ctx.sourcePath
+        );
+
+        if (activeLeaf) {
+            // If editor is open for this file, use real-time text
+            docText = (activeLeaf.view as MarkdownView).editor.getValue();
+        }
+
+        const docLines = docText.split('\n');
         const elStart = info.lineStart;
         const elEnd = info.lineEnd;
 
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
-        // 1. Check if this element STARTS with a columns block
-        const firstLine = docLines[elStart] || '';
-        const startMatch = firstLine.match(startRe);
+        // Find the REAL position of Start Marker in this section
+        let realStartLine = -1;
+        let numColumns = 0;
 
-        if (startMatch) {
-            const numColumns = parseInt(startMatch[1], 10);
-            if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) return;
-
-            // Find end marker - limit search to avoid reading wrong block
-            let blockEndLine = -1;
-            const searchLimit = Math.min(elEnd + 20, docLines.length);
-
-            for (let i = elStart + 1; i < searchLimit; i++) {
-                if (endRe.test(docLines[i])) {
-                    blockEndLine = i;
-                    break;
-                }
-            }
-
-            if (blockEndLine === -1) return; // No end marker found
-
-            // Render columns
-            const blockLines = docLines.slice(elStart + 1, blockEndLine);
-            this.renderColumnsFromLines(el, blockLines, numColumns);
-
-            // --- FIX TEXT SWALLOWING ---
-            // Check for content after end marker but in same section
-            if (blockEndLine < elEnd) {
-                const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
-
-                const trailingContainer = document.createElement('div');
-                trailingContainer.addClass('live-columns-trailing-text');
-
-                let hasContent = false;
-                trailingLines.forEach(line => {
-                    // Skip if this is start marker of next block (avoid duplication)
-                    if (startRe.test(line)) return;
-
-                    if (line.trim()) {
-                        const p = document.createElement('p');
-                        p.innerText = line;
-                        trailingContainer.appendChild(p);
-                        hasContent = true;
-                    }
-                });
-
-                if (hasContent) {
-                    el.appendChild(trailingContainer);
-                }
-            }
-            return;
-        }
-
-        // 2. Hide markers logic - scan backward (optimized)
-        let insideBlock = false;
-        for (let i = elStart - 1; i >= 0; i--) {
-            if (endRe.test(docLines[i])) break; // Found end above -> not inside
-            if (startRe.test(docLines[i])) {
-                insideBlock = true;
+        for (let i = elStart; i <= elEnd; i++) {
+            if (!docLines[i]) continue; // Safety check
+            const line = docLines[i];
+            const match = line.match(startRe);
+            if (match) {
+                realStartLine = i;
+                numColumns = parseInt(match[1], 10);
                 break;
             }
         }
 
-        if (insideBlock) {
-            el.addClass('live-columns-marker-hidden');
+        // If no start marker in this section -> regular text block
+        if (realStartLine === -1) {
+            // Hide marker logic (cleanup)
+            let insideBlock = false;
+            for (let i = elStart - 1; i >= 0; i--) {
+                if (!docLines[i]) continue;
+                if (endRe.test(docLines[i])) break;
+                if (startRe.test(docLines[i])) { insideBlock = true; break; }
+            }
+            if (insideBlock) el.addClass('live-columns-marker-hidden');
+            return;
+        }
+
+        if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) return;
+
+        // Find End Marker
+        let blockEndLine = -1;
+        const searchLimit = Math.min(docLines.length, realStartLine + 50);
+
+        for (let i = realStartLine + 1; i < searchLimit; i++) {
+            if (!docLines[i]) continue;
+            if (endRe.test(docLines[i])) {
+                blockEndLine = i;
+                break;
+            }
+        }
+
+        if (blockEndLine === -1) return;
+
+        // --- RENDER ---
+        el.empty();
+
+        // A. Preamble (text BEFORE columns in same section)
+        if (realStartLine > elStart) {
+            const preLines = docLines.slice(elStart, realStartLine);
+            const preContainer = document.createElement('div');
+            preContainer.addClass('live-columns-pre-text');
+
+            preLines.forEach(line => {
+                if (line.trim()) {
+                    const p = document.createElement('p');
+                    p.innerText = line;
+                    preContainer.appendChild(p);
+                }
+            });
+            el.appendChild(preContainer);
+        }
+
+        // B. Columns
+        const blockLines = docLines.slice(realStartLine + 1, blockEndLine);
+        const columnsContainerWrapper = document.createElement('div');
+        this.renderColumnsFromLines(columnsContainerWrapper, blockLines, numColumns);
+        el.appendChild(columnsContainerWrapper);
+
+        // C. Trailing (text AFTER columns in same section)
+        if (blockEndLine < elEnd) {
+            const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
+            const trailingContainer = document.createElement('div');
+            trailingContainer.addClass('live-columns-trailing-text');
+
+            let hasContent = false;
+            trailingLines.forEach(line => {
+                if (startRe.test(line)) return; // Skip next block's start
+                if (line.trim()) {
+                    const p = document.createElement('p');
+                    p.innerText = line;
+                    trailingContainer.appendChild(p);
+                    hasContent = true;
+                }
+            });
+
+            if (hasContent) {
+                el.appendChild(trailingContainer);
+            }
         }
     }
 

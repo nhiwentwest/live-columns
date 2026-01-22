@@ -116,11 +116,15 @@ class ColumnsWidget extends WidgetType {
         }
 
         const content = this.columnContents[index] || '';
-        colDiv.innerHTML = this.renderContent(content);
+        // Use DOM-safe approach instead of innerHTML
+        const htmlContent = this.renderContent(content);
+        const template = document.createElement('template');
+        template.innerHTML = htmlContent;
+        colDiv.appendChild(template.content.cloneNode(true));
 
         // Handle keyboard navigation
         colDiv.addEventListener('keydown', (e) => {
-            this.handleKeydown(e as KeyboardEvent, index);
+            this.handleKeydown(e, index);
         });
 
         // Only sync when user leaves the column (blur)

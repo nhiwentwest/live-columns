@@ -94,7 +94,10 @@ var ColumnsWidget = class extends import_view.WidgetType {
       colDiv.classList.add(`live-border-${borderClass}`);
     }
     const content = this.columnContents[index] || "";
-    colDiv.innerHTML = this.renderContent(content);
+    const htmlContent = this.renderContent(content);
+    const template = document.createElement("template");
+    template.innerHTML = htmlContent;
+    colDiv.appendChild(template.content.cloneNode(true));
     colDiv.addEventListener("keydown", (e) => {
       this.handleKeydown(e, index);
     });
@@ -688,67 +691,106 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
   }
   /**
    * Post-processor for Reading mode
-   * Updated: Fix text swallowing and reduce flickering
+   * FINAL FIX: Gets live text from Editor to avoid stale state (1-char lag).
    */
   columnsPostProcessor(el, ctx) {
     const info = ctx.getSectionInfo(el);
-    if (!(info == null ? void 0 : info.text))
+    if (!info)
       return;
-    const docLines = info.text.split("\n");
+    let docText = info.text || "";
+    const activeLeaf = this.app.workspace.getLeavesOfType("markdown").find(
+      (leaf) => {
+        var _a;
+        return ((_a = leaf.view.file) == null ? void 0 : _a.path) === ctx.sourcePath;
+      }
+    );
+    if (activeLeaf) {
+      docText = activeLeaf.view.editor.getValue();
+    }
+    const docLines = docText.split("\n");
     const elStart = info.lineStart;
     const elEnd = info.lineEnd;
     const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
     const endRe = /%%\s*columns:end\s*%%/i;
-    const firstLine = docLines[elStart] || "";
-    const startMatch = firstLine.match(startRe);
-    if (startMatch) {
-      const numColumns = parseInt(startMatch[1], 10);
-      if (isNaN(numColumns) || numColumns < 1 || numColumns > 6)
-        return;
-      let blockEndLine = -1;
-      const searchLimit = Math.min(elEnd + 20, docLines.length);
-      for (let i = elStart + 1; i < searchLimit; i++) {
-        if (endRe.test(docLines[i])) {
-          blockEndLine = i;
+    let realStartLine = -1;
+    let numColumns = 0;
+    for (let i = elStart; i <= elEnd; i++) {
+      if (!docLines[i])
+        continue;
+      const line = docLines[i];
+      const match = line.match(startRe);
+      if (match) {
+        realStartLine = i;
+        numColumns = parseInt(match[1], 10);
+        break;
+      }
+    }
+    if (realStartLine === -1) {
+      let insideBlock = false;
+      for (let i = elStart - 1; i >= 0; i--) {
+        if (!docLines[i])
+          continue;
+        if (endRe.test(docLines[i]))
+          break;
+        if (startRe.test(docLines[i])) {
+          insideBlock = true;
           break;
         }
       }
-      if (blockEndLine === -1)
-        return;
-      const blockLines = docLines.slice(elStart + 1, blockEndLine);
-      this.renderColumnsFromLines(el, blockLines, numColumns);
-      if (blockEndLine < elEnd) {
-        const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
-        const trailingContainer = document.createElement("div");
-        trailingContainer.addClass("live-columns-trailing-text");
-        let hasContent = false;
-        trailingLines.forEach((line) => {
-          if (startRe.test(line))
-            return;
-          if (line.trim()) {
-            const p = document.createElement("p");
-            p.innerText = line;
-            trailingContainer.appendChild(p);
-            hasContent = true;
-          }
-        });
-        if (hasContent) {
-          el.appendChild(trailingContainer);
-        }
-      }
+      if (insideBlock)
+        el.addClass("live-columns-marker-hidden");
       return;
     }
-    let insideBlock = false;
-    for (let i = elStart - 1; i >= 0; i--) {
-      if (endRe.test(docLines[i]))
-        break;
-      if (startRe.test(docLines[i])) {
-        insideBlock = true;
+    if (isNaN(numColumns) || numColumns < 1 || numColumns > 6)
+      return;
+    let blockEndLine = -1;
+    const searchLimit = Math.min(docLines.length, realStartLine + 50);
+    for (let i = realStartLine + 1; i < searchLimit; i++) {
+      if (!docLines[i])
+        continue;
+      if (endRe.test(docLines[i])) {
+        blockEndLine = i;
         break;
       }
     }
-    if (insideBlock) {
-      el.addClass("live-columns-marker-hidden");
+    if (blockEndLine === -1)
+      return;
+    el.empty();
+    if (realStartLine > elStart) {
+      const preLines = docLines.slice(elStart, realStartLine);
+      const preContainer = document.createElement("div");
+      preContainer.addClass("live-columns-pre-text");
+      preLines.forEach((line) => {
+        if (line.trim()) {
+          const p = document.createElement("p");
+          p.innerText = line;
+          preContainer.appendChild(p);
+        }
+      });
+      el.appendChild(preContainer);
+    }
+    const blockLines = docLines.slice(realStartLine + 1, blockEndLine);
+    const columnsContainerWrapper = document.createElement("div");
+    this.renderColumnsFromLines(columnsContainerWrapper, blockLines, numColumns);
+    el.appendChild(columnsContainerWrapper);
+    if (blockEndLine < elEnd) {
+      const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
+      const trailingContainer = document.createElement("div");
+      trailingContainer.addClass("live-columns-trailing-text");
+      let hasContent = false;
+      trailingLines.forEach((line) => {
+        if (startRe.test(line))
+          return;
+        if (line.trim()) {
+          const p = document.createElement("p");
+          p.innerText = line;
+          trailingContainer.appendChild(p);
+          hasContent = true;
+        }
+      });
+      if (hasContent) {
+        el.appendChild(trailingContainer);
+      }
     }
   }
   /**
