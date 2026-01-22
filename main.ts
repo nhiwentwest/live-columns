@@ -473,7 +473,7 @@ export default class LiveColumnsPlugin extends Plugin {
         // If this element starts at or after the columns:start marker line
         // but is not the first line of the block, hide it (it's part of columns content)
         if (elStart > columnsStartLine && elStart <= columnsEndLine) {
-            el.style.display = 'none';
+            el.addClass('live-columns-marker-hidden');
             return;
         }
 

@@ -724,7 +724,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       return;
     }
     if (elStart > columnsStartLine && elStart <= columnsEndLine) {
-      el.style.display = "none";
+      el.addClass("live-columns-marker-hidden");
       return;
     }
     if (elStart !== columnsStartLine) {
