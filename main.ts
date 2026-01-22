@@ -444,13 +444,21 @@ export default class LiveColumnsPlugin extends Plugin {
         const elLines = lines.slice(elStart, elEnd + 1);
         const elText = elLines.join('\n');
 
-        // Check if this element's FIRST line contains a columns:start marker
+        // Check if ANY line in this element's range contains a columns:start marker
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
-        // Check the first line of this element specifically
-        const firstLine = lines[elStart] || '';
-        const startMatch = firstLine.match(startRe);
+        // Scan all lines in this element to find a columns:start marker
+        let startMatch: RegExpMatchArray | null = null;
+        let markerLineIndex = -1;
+        for (let i = elStart; i <= elEnd; i++) {
+            const match = lines[i].match(startRe);
+            if (match) {
+                startMatch = match;
+                markerLineIndex = i;
+                break;
+            }
+        }
 
         // If this element doesn't contain a start marker, check if it's inside a block
         if (!startMatch) {
@@ -490,9 +498,9 @@ export default class LiveColumnsPlugin extends Plugin {
             return;
         }
 
-        // Find the complete block in the document starting from this element
+        // Find the complete block in the document starting from the marker line
         let blockEndLine = -1;
-        for (let i = elStart; i < lines.length; i++) {
+        for (let i = markerLineIndex; i < lines.length; i++) {
             if (lines[i].match(endRe)) {
                 blockEndLine = i;
                 break;
@@ -504,8 +512,8 @@ export default class LiveColumnsPlugin extends Plugin {
             return;
         }
 
-        // Extract body content between markers
-        const bodyLines = lines.slice(elStart + 1, blockEndLine);
+        // Extract body content between markers (use markerLineIndex, not elStart)
+        const bodyLines = lines.slice(markerLineIndex + 1, blockEndLine);
         const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
         const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
         let colors: string[] = [];

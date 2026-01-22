@@ -707,8 +707,16 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     const elText = elLines.join("\n");
     const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
     const endRe = /%%\s*columns:end\s*%%/i;
-    const firstLine = lines[elStart] || "";
-    const startMatch = firstLine.match(startRe);
+    let startMatch = null;
+    let markerLineIndex = -1;
+    for (let i = elStart; i <= elEnd; i++) {
+      const match = lines[i].match(startRe);
+      if (match) {
+        startMatch = match;
+        markerLineIndex = i;
+        break;
+      }
+    }
     if (!startMatch) {
       let inBlock = false;
       let blockStart = -1;
@@ -737,7 +745,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       return;
     }
     let blockEndLine = -1;
-    for (let i = elStart; i < lines.length; i++) {
+    for (let i = markerLineIndex; i < lines.length; i++) {
       if (lines[i].match(endRe)) {
         blockEndLine = i;
         break;
@@ -746,7 +754,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     if (blockEndLine === -1) {
       return;
     }
-    const bodyLines = lines.slice(elStart + 1, blockEndLine);
+    const bodyLines = lines.slice(markerLineIndex + 1, blockEndLine);
     const colorRe = /^%%\s*columns:colors\s+([^\n%]+)\s*%%/i;
     const borderRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%%/i;
     let colors = [];
