@@ -688,9 +688,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
   }
   /**
    * Post-processor for Reading mode
-   * Transforms marker-based columns into layout
-   * 
-   * Uses document-level slice approach for accurate block detection.
+   * Updated: Fix text swallowing and reduce flickering
    */
   columnsPostProcessor(el, ctx) {
     const info = ctx.getSectionInfo(el);
@@ -708,7 +706,8 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       if (isNaN(numColumns) || numColumns < 1 || numColumns > 6)
         return;
       let blockEndLine = -1;
-      for (let i = elStart + 1; i < docLines.length; i++) {
+      const searchLimit = Math.min(elEnd + 20, docLines.length);
+      for (let i = elStart + 1; i < searchLimit; i++) {
         if (endRe.test(docLines[i])) {
           blockEndLine = i;
           break;
@@ -720,35 +719,36 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       this.renderColumnsFromLines(el, blockLines, numColumns);
       if (blockEndLine < elEnd) {
         const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
-        if (trailingLines.length > 0) {
-          const trailingContainer = document.createElement("div");
-          trailingContainer.className = "live-columns-trailing-content";
-          trailingLines.forEach((line) => {
-            if (line.trim()) {
-              const p = document.createElement("p");
-              p.innerText = line;
-              trailingContainer.appendChild(p);
-            }
-          });
-          if (trailingContainer.hasChildNodes()) {
-            el.appendChild(trailingContainer);
+        const trailingContainer = document.createElement("div");
+        trailingContainer.addClass("live-columns-trailing-text");
+        let hasContent = false;
+        trailingLines.forEach((line) => {
+          if (startRe.test(line))
+            return;
+          if (line.trim()) {
+            const p = document.createElement("p");
+            p.innerText = line;
+            trailingContainer.appendChild(p);
+            hasContent = true;
           }
+        });
+        if (hasContent) {
+          el.appendChild(trailingContainer);
         }
       }
       return;
     }
-    let currentBlockStart = -1;
-    for (let i = 0; i < docLines.length; i++) {
+    let insideBlock = false;
+    for (let i = elStart - 1; i >= 0; i--) {
+      if (endRe.test(docLines[i]))
+        break;
       if (startRe.test(docLines[i])) {
-        currentBlockStart = i;
+        insideBlock = true;
+        break;
       }
-      if (endRe.test(docLines[i]) && currentBlockStart !== -1) {
-        if (elStart > currentBlockStart && elEnd <= i) {
-          el.addClass("live-columns-marker-hidden");
-          return;
-        }
-        currentBlockStart = -1;
-      }
+    }
+    if (insideBlock) {
+      el.addClass("live-columns-marker-hidden");
     }
   }
   /**

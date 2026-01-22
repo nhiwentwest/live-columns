@@ -424,15 +424,12 @@ export default class LiveColumnsPlugin extends Plugin {
 
     /**
      * Post-processor for Reading mode
-     * Transforms marker-based columns into layout
-     * 
-     * Uses document-level slice approach for accurate block detection.
+     * Updated: Fix text swallowing and reduce flickering
      */
     columnsPostProcessor(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
         const info = ctx.getSectionInfo(el);
         if (!info?.text) return;
 
-        // Get full document lines
         const docLines = info.text.split('\n');
         const elStart = info.lineStart;
         const elEnd = info.lineEnd;
@@ -440,18 +437,19 @@ export default class LiveColumnsPlugin extends Plugin {
         const startRe = /%%\s*columns:start\s+(\d+)\s*%%/i;
         const endRe = /%%\s*columns:end\s*%%/i;
 
-        // Check if this element's first line contains a columns:start marker
+        // 1. Check if this element STARTS with a columns block
         const firstLine = docLines[elStart] || '';
         const startMatch = firstLine.match(startRe);
 
         if (startMatch) {
-            // This element starts a columns block - find the end and render
             const numColumns = parseInt(startMatch[1], 10);
             if (isNaN(numColumns) || numColumns < 1 || numColumns > 6) return;
 
-            // Find the matching end marker in document
+            // Find end marker - limit search to avoid reading wrong block
             let blockEndLine = -1;
-            for (let i = elStart + 1; i < docLines.length; i++) {
+            const searchLimit = Math.min(elEnd + 20, docLines.length);
+
+            for (let i = elStart + 1; i < searchLimit; i++) {
                 if (endRe.test(docLines[i])) {
                     blockEndLine = i;
                     break;
@@ -460,55 +458,51 @@ export default class LiveColumnsPlugin extends Plugin {
 
             if (blockEndLine === -1) return; // No end marker found
 
-            // Extract block content using document-level slice (NOT elementLines!)
+            // Render columns
             const blockLines = docLines.slice(elStart + 1, blockEndLine);
-
-            // Render the columns
             this.renderColumnsFromLines(el, blockLines, numColumns);
 
-            // FIX: Preserve text that appears AFTER columns:end but within the same element
+            // --- FIX TEXT SWALLOWING ---
+            // Check for content after end marker but in same section
             if (blockEndLine < elEnd) {
                 const trailingLines = docLines.slice(blockEndLine + 1, elEnd + 1);
-                if (trailingLines.length > 0) {
-                    const trailingContainer = document.createElement('div');
-                    trailingContainer.className = 'live-columns-trailing-content';
-                    trailingLines.forEach(line => {
-                        if (line.trim()) {
-                            const p = document.createElement('p');
-                            p.innerText = line;
-                            trailingContainer.appendChild(p);
-                        }
-                    });
-                    if (trailingContainer.hasChildNodes()) {
-                        el.appendChild(trailingContainer);
+
+                const trailingContainer = document.createElement('div');
+                trailingContainer.addClass('live-columns-trailing-text');
+
+                let hasContent = false;
+                trailingLines.forEach(line => {
+                    // Skip if this is start marker of next block (avoid duplication)
+                    if (startRe.test(line)) return;
+
+                    if (line.trim()) {
+                        const p = document.createElement('p');
+                        p.innerText = line;
+                        trailingContainer.appendChild(p);
+                        hasContent = true;
                     }
+                });
+
+                if (hasContent) {
+                    el.appendChild(trailingContainer);
                 }
             }
             return;
         }
 
-        // This element doesn't start a columns block
-        // Check if it falls STRICTLY within a columns block range - if so, hide it
-
-        // Find all column blocks in the document
-        let currentBlockStart = -1;
-        for (let i = 0; i < docLines.length; i++) {
+        // 2. Hide markers logic - scan backward (optimized)
+        let insideBlock = false;
+        for (let i = elStart - 1; i >= 0; i--) {
+            if (endRe.test(docLines[i])) break; // Found end above -> not inside
             if (startRe.test(docLines[i])) {
-                currentBlockStart = i;
-            }
-            if (endRe.test(docLines[i]) && currentBlockStart !== -1) {
-                // Check if this element falls STRICTLY within this block
-                // elStart > currentBlockStart: element starts after the start marker line
-                // elEnd <= i: element ends at or before the end marker line
-                if (elStart > currentBlockStart && elEnd <= i) {
-                    el.addClass('live-columns-marker-hidden');
-                    return;
-                }
-                currentBlockStart = -1;
+                insideBlock = true;
+                break;
             }
         }
 
-        // Element is not inside any columns block - leave it visible
+        if (insideBlock) {
+            el.addClass('live-columns-marker-hidden');
+        }
     }
 
     /**
