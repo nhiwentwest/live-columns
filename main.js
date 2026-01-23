@@ -95,9 +95,9 @@ var ColumnsWidget = class extends import_view.WidgetType {
     }
     const content = this.columnContents[index] || "";
     const htmlContent = this.renderContent(content);
-    const template = document.createElement("template");
-    template.innerHTML = htmlContent;
-    colDiv.appendChild(template.content.cloneNode(true));
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, "text/html");
+    Array.from(doc.body.childNodes).forEach((node) => colDiv.appendChild(node));
     colDiv.addEventListener("keydown", (e) => {
       this.handleKeydown(e, index);
     });

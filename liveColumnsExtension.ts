@@ -116,11 +116,11 @@ class ColumnsWidget extends WidgetType {
         }
 
         const content = this.columnContents[index] || '';
-        // Use DOM-safe approach instead of innerHTML
+        // Use DOMParser to avoid innerHTML property assignment completely
         const htmlContent = this.renderContent(content);
-        const template = document.createElement('template');
-        template.innerHTML = htmlContent;
-        colDiv.appendChild(template.content.cloneNode(true));
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        Array.from(doc.body.childNodes).forEach(node => colDiv.appendChild(node));
 
         // Handle keyboard navigation
         colDiv.addEventListener('keydown', (e) => {
