@@ -115,20 +115,34 @@ class ColumnsWidget extends WidgetType {
             colDiv.classList.add(`live-border-${borderClass}`);
         }
 
+        // Initial render: Show rendered HTML
         const content = this.columnContents[index] || '';
-        // Use DOMParser to avoid innerHTML property assignment completely
-        const htmlContent = this.renderContent(content);
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
-        Array.from(doc.body.childNodes).forEach(node => colDiv.appendChild(node));
+        this.setColumnContent(colDiv, content, false); // false = rendered mode
 
         // Handle keyboard navigation
         colDiv.addEventListener('keydown', (e) => {
             this.handleKeydown(e, index);
         });
 
-        // Only sync when user leaves the column (blur)
+        // === EDIT MODE TOGGLE ===
+        // On FOCUS: Switch to raw markdown (so user can edit ## etc)
+        colDiv.addEventListener('focus', () => {
+            const currentContent = this.columnContents[index] || '';
+            this.setColumnContent(colDiv, currentContent, true); // true = raw mode
+            colDiv.classList.add('live-column-editing');
+        });
+
+        // On BLUR: Switch back to rendered HTML and sync
         colDiv.addEventListener('blur', () => {
+            // First extract the raw text the user typed
+            const rawText = colDiv.innerText || '';
+            this.columnContents[index] = rawText.trim();
+
+            // Then render it back to HTML
+            this.setColumnContent(colDiv, this.columnContents[index], false);
+            colDiv.classList.remove('live-column-editing');
+
+            // Sync to source document
             this.syncToSource();
         });
 
@@ -136,8 +150,31 @@ class ColumnsWidget extends WidgetType {
     }
 
     /**
+     * Set column content in either rendered or raw mode
+     * @param colDiv - The column element
+     * @param content - The markdown content
+     * @param rawMode - If true, show raw markdown text. If false, show rendered HTML.
+     */
+    private setColumnContent(colDiv: HTMLElement, content: string, rawMode: boolean): void {
+        // Clear existing content
+        while (colDiv.firstChild) {
+            colDiv.removeChild(colDiv.firstChild);
+        }
+
+        if (rawMode) {
+            // RAW MODE: Show plain text for editing
+            colDiv.innerText = content || '';
+        } else {
+            // RENDERED MODE: Show formatted HTML
+            const htmlContent = this.renderContent(content);
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlContent, 'text/html');
+            Array.from(doc.body.childNodes).forEach(node => colDiv.appendChild(node));
+        }
+    }
+
+    /**
      * Render markdown content as HTML
-     * FIXED: Prevents adding extra <br> after </div> blocks to avoid double spacing
      */
     private renderContent(text: string): string {
         if (!text.trim()) {
@@ -171,11 +208,8 @@ class ColumnsWidget extends WidgetType {
             // Paragraphs (lines not already wrapped)
             .replace(/^(?!<[hulo])(.+)$/gm, '<div>$1</div>');
 
-        // KEY FIX: Remove newline characters that immediately follow a closing div.
-        // The div tag itself provides the visual line break.
-        html = html.replace(/<\/div>\n/g, '</div>');
-
-        // Now safe to convert remaining newlines (e.g. within paragraphs or double breaks) to <br>
+        // Simply convert all newlines to <br>
+        // CSS will handle proper spacing via margins on block elements
         html = html.replace(/\n/g, '<br>');
 
         return html;

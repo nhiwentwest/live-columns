@@ -94,21 +94,45 @@ var ColumnsWidget = class extends import_view.WidgetType {
       colDiv.classList.add(`live-border-${borderClass}`);
     }
     const content = this.columnContents[index] || "";
-    const htmlContent = this.renderContent(content);
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(htmlContent, "text/html");
-    Array.from(doc.body.childNodes).forEach((node) => colDiv.appendChild(node));
+    this.setColumnContent(colDiv, content, false);
     colDiv.addEventListener("keydown", (e) => {
       this.handleKeydown(e, index);
     });
+    colDiv.addEventListener("focus", () => {
+      const currentContent = this.columnContents[index] || "";
+      this.setColumnContent(colDiv, currentContent, true);
+      colDiv.classList.add("live-column-editing");
+    });
     colDiv.addEventListener("blur", () => {
+      const rawText = colDiv.innerText || "";
+      this.columnContents[index] = rawText.trim();
+      this.setColumnContent(colDiv, this.columnContents[index], false);
+      colDiv.classList.remove("live-column-editing");
       this.syncToSource();
     });
     return colDiv;
   }
   /**
+   * Set column content in either rendered or raw mode
+   * @param colDiv - The column element
+   * @param content - The markdown content
+   * @param rawMode - If true, show raw markdown text. If false, show rendered HTML.
+   */
+  setColumnContent(colDiv, content, rawMode) {
+    while (colDiv.firstChild) {
+      colDiv.removeChild(colDiv.firstChild);
+    }
+    if (rawMode) {
+      colDiv.innerText = content || "";
+    } else {
+      const htmlContent = this.renderContent(content);
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlContent, "text/html");
+      Array.from(doc.body.childNodes).forEach((node) => colDiv.appendChild(node));
+    }
+  }
+  /**
    * Render markdown content as HTML
-   * FIXED: Prevents adding extra <br> after </div> blocks to avoid double spacing
    */
   renderContent(text) {
     if (!text.trim()) {
@@ -118,7 +142,6 @@ var ColumnsWidget = class extends import_view.WidgetType {
       const level = hashes.length;
       return `<h${level}>${content}</h${level}>`;
     }).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>").replace(/`(.+?)`/g, "<code>$1</code>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>').replace(/^[-*]\s+(.+)$/gm, "<li>$1</li>").replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>").replace(/((?:<li>.+?<\/li>\n?)+)/g, "<ul>$1</ul>").replace(/^(?!<[hulo])(.+)$/gm, "<div>$1</div>");
-    html = html.replace(/<\/div>\n/g, "</div>");
     html = html.replace(/\n/g, "<br>");
     return html;
   }

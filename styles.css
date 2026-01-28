@@ -8,10 +8,24 @@
 	gap: 16px;
 	width: 100%;
 	margin: 12px 0;
+	margin-bottom: 8px;
+	/* Extend widget to cover collapsed lines below */
+	padding-bottom: 20px;
+	position: relative;
+	z-index: 5;
 }
 
-.live-columns-source-hidden {
-	display: none;
+/* Cover for collapsed lines - blocks cursor from landing there */
+.live-columns-container::after {
+	content: '';
+	position: absolute;
+	bottom: -15px;
+	left: 0;
+	right: 0;
+	height: 30px;
+	background: transparent;
+	pointer-events: auto;
+	z-index: 10;
 }
 
 
@@ -83,6 +97,14 @@
 	margin: 0;
 }
 
+/* Editing mode - shows raw markdown */
+.live-column-editing {
+	font-family: var(--font-monospace);
+	font-size: 0.9em;
+	background: var(--background-secondary);
+	white-space: pre-wrap;
+}
+
 /* ============================================
    Column Content Styling
    ============================================ */
@@ -100,7 +122,29 @@
 .live-column h4,
 .live-column h5,
 .live-column h6 {
-	margin: 0 0 8px 0;
+	margin: 0;
+	display: block;
+}
+
+/* Hide br that comes right before or after headings (they don't need extra line breaks) */
+.live-column h1+br,
+.live-column h2+br,
+.live-column h3+br,
+.live-column h4+br,
+.live-column h5+br,
+.live-column h6+br {
+	display: none;
+}
+
+/* Also ensure div is block */
+.live-column>div {
+	display: block;
+	margin: 0;
+}
+
+/* Hide br after div */
+.live-column div+br {
+	display: none;
 }
 
 .live-column strong {
@@ -130,13 +174,54 @@
 }
 
 /* Hide marker spans in editor */
-.live-columns-marker-hidden {
-	display: none;
+.live-columns-marker-hidden,
+.live-columns-body-hidden {
+	font-size: 0px !important;
+	line-height: 0px !important;
+	color: transparent !important;
+	letter-spacing: -9999px !important;
 }
 
-/* Hide body text between markers in editor */
-.live-columns-body-hidden {
-	display: none;
+/* Collapse entire cm-line containing hidden content (both markers and body) */
+.cm-line:has(.live-columns-body-hidden),
+.cm-line:has(.live-columns-marker-hidden) {
+	height: 0px !important;
+	min-height: 0px !important;
+	line-height: 0px !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	overflow: hidden !important;
+	/* Allow clicks to pass through to content below */
+	pointer-events: none !important;
+}
+
+/* OVERRIDE: Keep the first line (with widget) visible and clickable */
+.cm-line:has(.live-columns-container) {
+	height: auto !important;
+	min-height: auto !important;
+	line-height: normal !important;
+	padding: revert !important;
+	margin: revert !important;
+	overflow: visible !important;
+	pointer-events: auto !important;
+}
+
+/* Also ensure the widget container itself is clickable */
+.live-columns-container,
+.live-columns-container * {
+	pointer-events: auto !important;
+}
+
+/* Hide fold indicators (> arrow) on hidden source lines */
+.cm-line:has(.live-columns-marker-hidden) .collapse-indicator,
+.cm-line:has(.live-columns-body-hidden) .collapse-indicator {
+	display: none !important;
+}
+
+/* Hide fold placeholder (...) on hidden source lines */
+.cm-line:has(.live-columns-marker-hidden) .cm-foldPlaceholder,
+.cm-line:has(.live-columns-body-hidden) .cm-foldPlaceholder {
+	display: none !important;
 }
 
 /* Basic color tokens (optional) */
