@@ -86,15 +86,51 @@ var ColumnsWidget = class extends import_view.WidgetType {
         this.deleteEntireBlock();
       }
     });
+    this.container.addEventListener("click", (e) => {
+      const target = e.target;
+      if (target === this.container) {
+        this.container.focus();
+      }
+    });
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "live-columns-delete-btn";
+    deleteBtn.innerHTML = "\u{1F5D1}\uFE0F Delete";
+    deleteBtn.title = "Delete this column block";
+    deleteBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.deleteEntireBlock();
+    });
+    this.container.appendChild(deleteBtn);
     return this.container;
   }
   /**
    * Delete the entire column block from the document
    */
   deleteEntireBlock() {
-    const from = this.block.startPos;
-    const to = this.block.endPos;
     const doc = this.view.state.doc;
+    const text = doc.toString();
+    const startRe = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+    let match;
+    let from = -1;
+    let to = -1;
+    while ((match = startRe.exec(text)) !== null) {
+      const num = parseInt(match[1], 10);
+      if (num === this.block.numColumns) {
+        from = match.index;
+        const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+        endRe.lastIndex = startRe.lastIndex;
+        const endMatch = endRe.exec(text);
+        if (endMatch) {
+          to = endMatch.index + endMatch[0].length;
+        }
+        break;
+      }
+    }
+    if (from === -1 || to === -1) {
+      console.error("Live Columns: Could not find block to delete");
+      return;
+    }
     let deleteTo = to;
     if (deleteTo < doc.length && doc.sliceString(deleteTo, deleteTo + 1) === "\n") {
       deleteTo++;

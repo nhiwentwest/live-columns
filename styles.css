@@ -13,6 +13,39 @@
 	padding-bottom: 20px;
 	position: relative;
 	z-index: 5;
+	/* Make focusable container have visible outline */
+	outline: none;
+	border: 2px solid transparent;
+	border-radius: 8px;
+	transition: border-color 0.2s ease;
+}
+
+/* Delete button - hidden by default */
+.live-columns-delete-btn {
+	position: absolute;
+	top: -12px;
+	right: 8px;
+	padding: 4px 10px;
+	background: var(--text-error, #dc2626);
+	color: white;
+	border: none;
+	border-radius: 6px;
+	font-size: 12px;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.2s ease;
+	z-index: 101;
+}
+
+/* Show delete button on hover or focus */
+.live-columns-container:hover .live-columns-delete-btn,
+.live-columns-container:focus .live-columns-delete-btn,
+.live-columns-container:focus-within .live-columns-delete-btn {
+	opacity: 1;
+}
+
+.live-columns-delete-btn:hover {
+	background: var(--text-error-hover, #b91c1c);
 }
 
 /* Cover for collapsed lines - blocks cursor from landing there */

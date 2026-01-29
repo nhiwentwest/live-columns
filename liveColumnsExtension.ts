@@ -107,6 +107,27 @@ class ColumnsWidget extends WidgetType {
             }
         });
 
+        // Click on container padding/gap to select it (for deletion)
+        this.container.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            // Only focus container if clicking directly on it, not on columns
+            if (target === this.container) {
+                this.container.focus();
+            }
+        });
+
+        // Add delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'live-columns-delete-btn';
+        deleteBtn.innerHTML = '🗑️ Delete';
+        deleteBtn.title = 'Delete this column block';
+        deleteBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.deleteEntireBlock();
+        });
+        this.container.appendChild(deleteBtn);
+
         return this.container;
     }
 
@@ -114,11 +135,36 @@ class ColumnsWidget extends WidgetType {
      * Delete the entire column block from the document
      */
     private deleteEntireBlock(): void {
-        const from = this.block.startPos;
-        const to = this.block.endPos;
+        const doc = this.view.state.doc;
+        const text = doc.toString();
+
+        // Re-find block position (positions may have shifted)
+        const startRe = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+        let match;
+        let from = -1;
+        let to = -1;
+
+        while ((match = startRe.exec(text)) !== null) {
+            const num = parseInt(match[1], 10);
+            if (num === this.block.numColumns) {
+                from = match.index;
+                // Find the end marker
+                const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+                endRe.lastIndex = startRe.lastIndex;
+                const endMatch = endRe.exec(text);
+                if (endMatch) {
+                    to = endMatch.index + endMatch[0].length;
+                }
+                break;
+            }
+        }
+
+        if (from === -1 || to === -1) {
+            console.error('Live Columns: Could not find block to delete');
+            return;
+        }
 
         // Also delete trailing newline if present
-        const doc = this.view.state.doc;
         let deleteTo = to;
         if (deleteTo < doc.length && doc.sliceString(deleteTo, deleteTo + 1) === '\n') {
             deleteTo++;
