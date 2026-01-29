@@ -186,7 +186,21 @@ class ColumnsWidget extends WidgetType {
         colDiv.addEventListener('paste', (e) => {
             e.preventDefault();
             const text = e.clipboardData?.getData('text/plain') || '';
-            document.execCommand('insertText', false, text);
+
+            // Use modern InputEvent API instead of deprecated execCommand
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                range.deleteContents();
+                const textNode = document.createTextNode(text);
+                range.insertNode(textNode);
+
+                // Move cursor to end of inserted text
+                range.setStartAfter(textNode);
+                range.setEndAfter(textNode);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
         });
 
         return colDiv;
