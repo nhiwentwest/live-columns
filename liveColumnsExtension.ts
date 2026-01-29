@@ -479,26 +479,32 @@ function findColumnsBlocks(view: EditorView): ColumnsBlock[] {
         const borderLineRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%{1,2}\s*$/i;
         let colors: string[] = [];
         let borders: string[] = [];
+        let metadataLen = 0; // Track length of metadata lines to hide
 
         // Consume metadata lines from the beginning (order-independent, skipping blanks)
         let idx = 0;
         while (idx < blockLines.length) {
-            const line = blockLines[idx].trim();
-            if (!line) {
+            const line = blockLines[idx];
+            const trimmedLine = line.trim();
+            if (!trimmedLine) {
+                // Empty line - count it but continue
+                metadataLen += line.length + 1; // +1 for newline
                 idx += 1;
                 continue;
             }
 
-            const colorMatch = line.match(colorLineRe);
+            const colorMatch = trimmedLine.match(colorLineRe);
             if (colorMatch) {
                 colors = colorMatch[1].split('|').map(c => c.trim());
+                metadataLen += line.length + 1; // +1 for newline
                 blockLines.splice(idx, 1);
                 continue;
             }
 
-            const borderMatch = line.match(borderLineRe);
+            const borderMatch = trimmedLine.match(borderLineRe);
             if (borderMatch) {
                 borders = borderMatch[1].split('|').map(b => b.trim());
+                metadataLen += line.length + 1; // +1 for newline
                 blockLines.splice(idx, 1);
                 continue;
             }
@@ -506,6 +512,9 @@ function findColumnsBlocks(view: EditorView): ColumnsBlock[] {
             // Hit a non-metadata line, stop consuming
             break;
         }
+
+        // Include metadata lines in the hidden marker area
+        const totalStartMarkerLen = startMarkerLen + metadataLen;
 
         // Parse remaining lines as column content
         const bodyText = blockLines.join('\n');
@@ -516,7 +525,7 @@ function findColumnsBlocks(view: EditorView): ColumnsBlock[] {
             columns: cols,
             startPos,
             endPos,
-            startMarkerLen,
+            startMarkerLen: totalStartMarkerLen,
             endMarkerLen,
             colors,
             borders

@@ -315,27 +315,33 @@ function findColumnsBlocks(view) {
     const borderLineRe = /^%%\s*columns:borders\s+([^\n%]+)\s*%{1,2}\s*$/i;
     let colors = [];
     let borders = [];
+    let metadataLen = 0;
     let idx = 0;
     while (idx < blockLines.length) {
-      const line = blockLines[idx].trim();
-      if (!line) {
+      const line = blockLines[idx];
+      const trimmedLine = line.trim();
+      if (!trimmedLine) {
+        metadataLen += line.length + 1;
         idx += 1;
         continue;
       }
-      const colorMatch = line.match(colorLineRe);
+      const colorMatch = trimmedLine.match(colorLineRe);
       if (colorMatch) {
         colors = colorMatch[1].split("|").map((c) => c.trim());
+        metadataLen += line.length + 1;
         blockLines.splice(idx, 1);
         continue;
       }
-      const borderMatch = line.match(borderLineRe);
+      const borderMatch = trimmedLine.match(borderLineRe);
       if (borderMatch) {
         borders = borderMatch[1].split("|").map((b) => b.trim());
+        metadataLen += line.length + 1;
         blockLines.splice(idx, 1);
         continue;
       }
       break;
     }
+    const totalStartMarkerLen = startMarkerLen + metadataLen;
     const bodyText = blockLines.join("\n");
     const cols = parseColumnsFromBody(bodyText, num);
     blocks.push({
@@ -343,7 +349,7 @@ function findColumnsBlocks(view) {
       columns: cols,
       startPos,
       endPos,
-      startMarkerLen,
+      startMarkerLen: totalStartMarkerLen,
       endMarkerLen,
       colors,
       borders
