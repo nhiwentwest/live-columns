@@ -94,7 +94,7 @@ var ColumnsWidget = class extends import_view.WidgetType {
     });
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "live-columns-delete-btn";
-    deleteBtn.textContent = "\u{1F5D1}\uFE0F Delete";
+    deleteBtn.textContent = "\u{1F5D1}\uFE0F delete";
     deleteBtn.title = "Delete this column block";
     deleteBtn.addEventListener("click", (e) => {
       e.preventDefault();
