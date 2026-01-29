@@ -119,7 +119,7 @@ class ColumnsWidget extends WidgetType {
         // Add delete button
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'live-columns-delete-btn';
-        deleteBtn.innerHTML = '🗑️ Delete';
+        deleteBtn.textContent = '🗑️ Delete';
         deleteBtn.title = 'Delete this column block';
         deleteBtn.addEventListener('click', (e) => {
             e.preventDefault();
