@@ -181,6 +181,20 @@ class ColumnsWidget extends WidgetType {
             this.syncToSource();
         });
 
+        // Sync on input with debounce to catch edits before any rebuild
+        let inputTimeout: NodeJS.Timeout | null = null;
+        colDiv.addEventListener('input', () => {
+            // Update local state immediately
+            const rawText = colDiv.innerText || '';
+            this.columnContents[index] = rawText.trim();
+
+            // Debounced sync to document
+            if (inputTimeout) clearTimeout(inputTimeout);
+            inputTimeout = setTimeout(() => {
+                this.syncToSource();
+            }, 300);
+        });
+
         // Strip HTML formatting on paste - only keep plain text
         // This ensures pasted content uses column's CSS fonts
         colDiv.addEventListener('paste', (e) => {
@@ -357,14 +371,61 @@ class ColumnsWidget extends WidgetType {
             this.columnContents = newContents;
 
             const doc = this.view.state.doc;
-            const from = Math.max(0, Math.min(this.block.startPos, doc.length));
-            const to = Math.max(from, Math.min(this.block.endPos, doc.length));
+            const text = doc.toString();
+
+            // Re-find the block position in current document (positions may have shifted)
+            const startRe = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+            let currentBlock = null;
+            let match;
+
+            while ((match = startRe.exec(text)) !== null) {
+                const startPos = match.index;
+                const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+                endRe.lastIndex = startRe.lastIndex;
+                const endMatch = endRe.exec(text);
+
+                if (endMatch) {
+                    const endPos = endMatch.index + endMatch[0].length;
+                    // Check if this is our block (numColumns matches)
+                    const num = parseInt(match[1], 10);
+                    if (num === this.block.numColumns) {
+                        // Re-parse colors and borders from current document
+                        const blockContent = text.slice(startRe.lastIndex, endMatch.index);
+                        const colorLineRe = /%%\s*columns:colors\s+([^\n%]+)\s*%{1,2}/i;
+                        const borderLineRe = /%%\s*columns:borders\s+([^\n%]+)\s*%{1,2}/i;
+
+                        const colorMatch = blockContent.match(colorLineRe);
+                        const borderMatch = blockContent.match(borderLineRe);
+
+                        currentBlock = {
+                            startPos,
+                            endPos,
+                            colors: colorMatch ? colorMatch[1].split('|').map(c => c.trim()) : [],
+                            borders: borderMatch ? borderMatch[1].split('|').map(b => b.trim()) : []
+                        };
+                        break;
+                    }
+                }
+            }
+
+            if (!currentBlock) {
+                // Block not found, use original positions
+                currentBlock = {
+                    startPos: this.block.startPos,
+                    endPos: this.block.endPos,
+                    colors: this.block.colors,
+                    borders: this.block.borders
+                };
+            }
+
+            const from = Math.max(0, Math.min(currentBlock.startPos, doc.length));
+            const to = Math.max(from, Math.min(currentBlock.endPos, doc.length));
 
             const newMarkdown = buildColumnsMarkdown(
                 this.block.numColumns,
                 newContents,
-                this.block.colors,
-                this.block.borders
+                currentBlock.colors,  // Use current colors from document
+                currentBlock.borders   // Use current borders from document
             );
 
             const transaction = this.view.state.update({
@@ -501,9 +562,9 @@ function findColumnsBlocks(view: EditorView): ColumnsBlock[] {
             const line = blockLines[idx];
             const trimmedLine = line.trim();
             if (!trimmedLine) {
-                // Empty line - count it but continue
+                // Empty line at start - remove it and count its length
                 metadataLen += line.length + 1; // +1 for newline
-                idx += 1;
+                blockLines.splice(idx, 1);
                 continue;
             }
 

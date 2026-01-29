@@ -136,6 +136,16 @@ var ColumnsWidget = class extends import_view.WidgetType {
       colDiv.classList.remove("live-column-editing");
       this.syncToSource();
     });
+    let inputTimeout = null;
+    colDiv.addEventListener("input", () => {
+      const rawText = colDiv.innerText || "";
+      this.columnContents[index] = rawText.trim();
+      if (inputTimeout)
+        clearTimeout(inputTimeout);
+      inputTimeout = setTimeout(() => {
+        this.syncToSource();
+      }, 300);
+    });
     colDiv.addEventListener("paste", (e) => {
       var _a2;
       e.preventDefault();
@@ -218,13 +228,51 @@ var ColumnsWidget = class extends import_view.WidgetType {
       }
       this.columnContents = newContents;
       const doc = this.view.state.doc;
-      const from = Math.max(0, Math.min(this.block.startPos, doc.length));
-      const to = Math.max(from, Math.min(this.block.endPos, doc.length));
+      const text = doc.toString();
+      const startRe = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+      let currentBlock = null;
+      let match;
+      while ((match = startRe.exec(text)) !== null) {
+        const startPos = match.index;
+        const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+        endRe.lastIndex = startRe.lastIndex;
+        const endMatch = endRe.exec(text);
+        if (endMatch) {
+          const endPos = endMatch.index + endMatch[0].length;
+          const num = parseInt(match[1], 10);
+          if (num === this.block.numColumns) {
+            const blockContent = text.slice(startRe.lastIndex, endMatch.index);
+            const colorLineRe = /%%\s*columns:colors\s+([^\n%]+)\s*%{1,2}/i;
+            const borderLineRe = /%%\s*columns:borders\s+([^\n%]+)\s*%{1,2}/i;
+            const colorMatch = blockContent.match(colorLineRe);
+            const borderMatch = blockContent.match(borderLineRe);
+            currentBlock = {
+              startPos,
+              endPos,
+              colors: colorMatch ? colorMatch[1].split("|").map((c) => c.trim()) : [],
+              borders: borderMatch ? borderMatch[1].split("|").map((b) => b.trim()) : []
+            };
+            break;
+          }
+        }
+      }
+      if (!currentBlock) {
+        currentBlock = {
+          startPos: this.block.startPos,
+          endPos: this.block.endPos,
+          colors: this.block.colors,
+          borders: this.block.borders
+        };
+      }
+      const from = Math.max(0, Math.min(currentBlock.startPos, doc.length));
+      const to = Math.max(from, Math.min(currentBlock.endPos, doc.length));
       const newMarkdown = buildColumnsMarkdown(
         this.block.numColumns,
         newContents,
-        this.block.colors,
-        this.block.borders
+        currentBlock.colors,
+        // Use current colors from document
+        currentBlock.borders
+        // Use current borders from document
       );
       const transaction = this.view.state.update({
         changes: {
@@ -332,7 +380,7 @@ function findColumnsBlocks(view) {
       const trimmedLine = line.trim();
       if (!trimmedLine) {
         metadataLen += line.length + 1;
-        idx += 1;
+        blockLines.splice(idx, 1);
         continue;
       }
       const colorMatch = trimmedLine.match(colorLineRe);
@@ -566,6 +614,9 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
     }
     this.isSelectingColumn = true;
     const msg = type === "color" ? "background" : "border";
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     new import_obsidian2.Notice(`\u{1F446} Click on a column to change its ${msg} color...`, 5e3);
     document.body.classList.add("live-columns-selecting");
     this.columnClickHandler = (e) => {
@@ -585,7 +636,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
           }
         }
         this.exitColumnSelectionMode();
-        this.showColorPaletteForColumn(columnIndex, type, blockIndex);
+        this.showColorPaletteForColumn(columnIndex, type, blockIndex, container);
       }
     };
     document.addEventListener("click", this.columnClickHandler, true);
@@ -610,7 +661,7 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
   /**
    * Show color palette after user selected a column
    */
-  showColorPaletteForColumn(columnIndex, type, blockIndex = 0) {
+  showColorPaletteForColumn(columnIndex, type, blockIndex = 0, widgetContainer) {
     const view = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
     const editor = view == null ? void 0 : view.editor;
     if (!editor) {
@@ -710,7 +761,42 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       } else {
         borders[columnIndex] = selectedToken;
       }
-      this.applyColumnStyles(editor, startPos, endPos, num, colors, borders, doc);
+      let widgetContents = [];
+      if (widgetContainer) {
+        const columnDivs = widgetContainer.querySelectorAll(".live-column");
+        columnDivs.forEach((col) => {
+          const markdown = this.extractMarkdownFromHTML(col);
+          widgetContents.push(markdown.trim());
+        });
+      }
+      const freshDoc = editor.getValue();
+      const freshStartRe = /%%\s*columns:start\s+(\d+)\s*%%/g;
+      let freshStartMatch = null;
+      let freshMatchCount = 0;
+      while ((freshStartMatch = freshStartRe.exec(freshDoc)) !== null) {
+        if (freshMatchCount === blockIndex) {
+          break;
+        }
+        freshMatchCount++;
+      }
+      if (!freshStartMatch) {
+        new import_obsidian2.Notice("Block not found.");
+        return;
+      }
+      const freshStartPos = freshStartMatch.index;
+      const freshEndRe = /%%\s*columns:end\s*%%/g;
+      freshEndRe.lastIndex = freshStartRe.lastIndex;
+      const freshEndMatch = freshEndRe.exec(freshDoc);
+      if (!freshEndMatch) {
+        new import_obsidian2.Notice("Block end not found.");
+        return;
+      }
+      const freshEndPos = freshEndMatch.index + freshEndMatch[0].length;
+      if (widgetContents.length > 0) {
+        this.applyColumnStylesWithContent(editor, freshStartPos, freshEndPos, num, colors, borders, widgetContents);
+      } else {
+        this.applyColumnStyles(editor, freshStartPos, freshEndPos, num, colors, borders, freshDoc);
+      }
       new import_obsidian2.Notice(`Set column ${columnIndex + 1} ${typeName}: ${selectedName}`);
     });
     modal.open();
@@ -749,6 +835,42 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
       newBlock = newBlock.replace(/%%\s*columns:borders\s+[^\n%]+\s*%%\n?/g, "");
     }
     editor.replaceRange(newBlock, editor.offsetToPos(startPos), editor.offsetToPos(endPos));
+  }
+  /**
+   * Apply styles using content read directly from widget DOM
+   * This bypasses document sync entirely and uses the actual widget content
+   */
+  applyColumnStylesWithContent(editor, startPos, endPos, numColumns, colors, borders, contents) {
+    const lines = [];
+    lines.push(`%% columns:start ${numColumns} %%`);
+    const hasColors = colors.some((c) => c);
+    if (hasColors) {
+      lines.push(`%% columns:colors ${colors.slice(0, numColumns).join("|")} %%`);
+    }
+    const hasBorders = borders.some((b) => b);
+    if (hasBorders) {
+      lines.push(`%% columns:borders ${borders.slice(0, numColumns).join("|")} %%`);
+    }
+    for (let i = 0; i < numColumns; i++) {
+      if (i > 0) {
+        lines.push("--- col ---");
+      }
+      lines.push(contents[i] || "");
+    }
+    lines.push("%% columns:end %%");
+    const newBlock = lines.join("\n");
+    editor.replaceRange(newBlock, editor.offsetToPos(startPos), editor.offsetToPos(endPos));
+  }
+  /**
+   * Extract markdown from rendered HTML
+   * Converts HTML elements back to markdown syntax
+   */
+  extractMarkdownFromHTML(el) {
+    const clone = el.cloneNode(true);
+    let text = clone.innerHTML.replace(/<h(\d)[^>]*>(.+?)<\/h\1>/gi, (_, level, content) => {
+      return "#".repeat(parseInt(level)) + " " + content + "\n";
+    }).replace(/<strong[^>]*>(.+?)<\/strong>/gi, "**$1**").replace(/<b[^>]*>(.+?)<\/b>/gi, "**$1**").replace(/<em[^>]*>(.+?)<\/em>/gi, "*$1*").replace(/<i[^>]*>(.+?)<\/i>/gi, "*$1*").replace(/<code[^>]*>(.+?)<\/code>/gi, "`$1`").replace(/<a[^>]*href="([^"]*)"[^>]*>(.+?)<\/a>/gi, "[$2]($1)").replace(/<li[^>]*>(.+?)<\/li>/gi, "- $1\n").replace(/<\/?ul[^>]*>/gi, "").replace(/<\/?ol[^>]*>/gi, "").replace(/<div[^>]*>(.+?)<\/div>/gi, "$1\n").replace(/<p[^>]*>(.+?)<\/p>/gi, "$1\n").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&quot;/g, '"').replace(/\n{3,}/g, "\n\n").trim();
+    return text;
   }
   /**
    * Register editor commands for inserting column layouts

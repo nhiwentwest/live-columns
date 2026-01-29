@@ -65,6 +65,13 @@ export default class LiveColumnsPlugin extends Plugin {
 
         this.isSelectingColumn = true;
         const msg = type === 'color' ? 'background' : 'border';
+
+        // IMPORTANT: Blur any active element FIRST to trigger widget sync
+        // This ensures any unsaved edits are saved before we proceed
+        if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+        }
+
         new Notice(`👆 Click on a column to change its ${msg} color...`, 5000);
 
         // Add visual indicator class to body
@@ -74,7 +81,7 @@ export default class LiveColumnsPlugin extends Plugin {
         this.columnClickHandler = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             const column = target.closest('.live-column');
-            const container = target.closest('.live-columns-container');
+            const container = target.closest('.live-columns-container') as HTMLElement;
 
             if (column && container) {
                 e.preventDefault();
@@ -93,7 +100,9 @@ export default class LiveColumnsPlugin extends Plugin {
                 }
 
                 this.exitColumnSelectionMode();
-                this.showColorPaletteForColumn(columnIndex, type, blockIndex);
+
+                // Pass the container so we can read content directly from widget DOM
+                this.showColorPaletteForColumn(columnIndex, type, blockIndex, container);
             }
         };
 
@@ -125,7 +134,7 @@ export default class LiveColumnsPlugin extends Plugin {
     /**
      * Show color palette after user selected a column
      */
-    private showColorPaletteForColumn(columnIndex: number, type: 'color' | 'border', blockIndex: number = 0) {
+    private showColorPaletteForColumn(columnIndex: number, type: 'color' | 'border', blockIndex: number = 0, widgetContainer?: HTMLElement) {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         const editor = view?.editor;
         if (!editor) {
@@ -244,7 +253,53 @@ export default class LiveColumnsPlugin extends Plugin {
             } else {
                 borders[columnIndex] = selectedToken;
             }
-            this.applyColumnStyles(editor, startPos, endPos, num, colors, borders, doc);
+
+            // Read column content DIRECTLY from widget DOM if available
+            // This bypasses any sync issues
+            let widgetContents: string[] = [];
+            if (widgetContainer) {
+                const columnDivs = widgetContainer.querySelectorAll('.live-column');
+                columnDivs.forEach((col) => {
+                    // Convert HTML back to markdown to preserve ## headings etc
+                    const markdown = this.extractMarkdownFromHTML(col as HTMLElement);
+                    widgetContents.push(markdown.trim());
+                });
+            }
+
+            // Re-find block position in fresh document
+            const freshDoc = editor.getValue();
+            const freshStartRe = /%%\s*columns:start\s+(\d+)\s*%%/g;
+            let freshStartMatch: RegExpExecArray | null = null;
+            let freshMatchCount = 0;
+            while ((freshStartMatch = freshStartRe.exec(freshDoc)) !== null) {
+                if (freshMatchCount === blockIndex) {
+                    break;
+                }
+                freshMatchCount++;
+            }
+
+            if (!freshStartMatch) {
+                new Notice('Block not found.');
+                return;
+            }
+
+            const freshStartPos = freshStartMatch.index;
+            const freshEndRe = /%%\s*columns:end\s*%%/g;
+            freshEndRe.lastIndex = freshStartRe.lastIndex;
+            const freshEndMatch = freshEndRe.exec(freshDoc);
+
+            if (!freshEndMatch) {
+                new Notice('Block end not found.');
+                return;
+            }
+            const freshEndPos = freshEndMatch.index + freshEndMatch[0].length;
+
+            // If we have widget contents, build new markdown with them
+            if (widgetContents.length > 0) {
+                this.applyColumnStylesWithContent(editor, freshStartPos, freshEndPos, num, colors, borders, widgetContents);
+            } else {
+                this.applyColumnStyles(editor, freshStartPos, freshEndPos, num, colors, borders, freshDoc);
+            }
             new Notice(`Set column ${columnIndex + 1} ${typeName}: ${selectedName}`);
         });
         modal.open();
@@ -302,6 +357,97 @@ export default class LiveColumnsPlugin extends Plugin {
         }
 
         editor.replaceRange(newBlock, editor.offsetToPos(startPos), editor.offsetToPos(endPos));
+    }
+
+    /**
+     * Apply styles using content read directly from widget DOM
+     * This bypasses document sync entirely and uses the actual widget content
+     */
+    private applyColumnStylesWithContent(
+        editor: Editor,
+        startPos: number,
+        endPos: number,
+        numColumns: number,
+        colors: string[],
+        borders: string[],
+        contents: string[]
+    ) {
+        // Build completely new block from widget contents
+        const lines: string[] = [];
+
+        lines.push(`%% columns:start ${numColumns} %%`);
+
+        // Add colors line if any color is set
+        const hasColors = colors.some(c => c);
+        if (hasColors) {
+            lines.push(`%% columns:colors ${colors.slice(0, numColumns).join('|')} %%`);
+        }
+
+        // Add borders line if any border is set
+        const hasBorders = borders.some(b => b);
+        if (hasBorders) {
+            lines.push(`%% columns:borders ${borders.slice(0, numColumns).join('|')} %%`);
+        }
+
+        // Add column contents
+        for (let i = 0; i < numColumns; i++) {
+            if (i > 0) {
+                lines.push('--- col ---');
+            }
+            lines.push(contents[i] || '');
+        }
+
+        lines.push('%% columns:end %%');
+
+        const newBlock = lines.join('\n');
+        editor.replaceRange(newBlock, editor.offsetToPos(startPos), editor.offsetToPos(endPos));
+    }
+
+    /**
+     * Extract markdown from rendered HTML
+     * Converts HTML elements back to markdown syntax
+     */
+    private extractMarkdownFromHTML(el: HTMLElement): string {
+        const clone = el.cloneNode(true) as HTMLElement;
+
+        let text = clone.innerHTML
+            // Headings
+            .replace(/<h(\d)[^>]*>(.+?)<\/h\1>/gi, (_, level, content) => {
+                return '#'.repeat(parseInt(level)) + ' ' + content + '\n';
+            })
+            // Bold
+            .replace(/<strong[^>]*>(.+?)<\/strong>/gi, '**$1**')
+            .replace(/<b[^>]*>(.+?)<\/b>/gi, '**$1**')
+            // Italic
+            .replace(/<em[^>]*>(.+?)<\/em>/gi, '*$1*')
+            .replace(/<i[^>]*>(.+?)<\/i>/gi, '*$1*')
+            // Code
+            .replace(/<code[^>]*>(.+?)<\/code>/gi, '`$1`')
+            // Links
+            .replace(/<a[^>]*href="([^"]*)"[^>]*>(.+?)<\/a>/gi, '[$2]($1)')
+            // List items
+            .replace(/<li[^>]*>(.+?)<\/li>/gi, '- $1\n')
+            // Remove list wrappers
+            .replace(/<\/?ul[^>]*>/gi, '')
+            .replace(/<\/?ol[^>]*>/gi, '')
+            // Divs/paragraphs - just extract content
+            .replace(/<div[^>]*>(.+?)<\/div>/gi, '$1\n')
+            .replace(/<p[^>]*>(.+?)<\/p>/gi, '$1\n')
+            // Line breaks
+            .replace(/<br\s*\/?>/gi, '\n')
+            // Remove any remaining HTML tags
+            .replace(/<[^>]+>/g, '')
+            // Decode HTML entities
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&quot;/g, '"')
+            // Clean up multiple newlines
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+        return text;
     }
 
     /**
