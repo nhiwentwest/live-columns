@@ -6,7 +6,7 @@ import {
     EditorView,
     WidgetType,
 } from '@codemirror/view';
-import { RangeSetBuilder, Transaction } from '@codemirror/state';
+import { RangeSetBuilder, Transaction, EditorState } from '@codemirror/state';
 import { editorLivePreviewField } from 'obsidian';
 
 /**
@@ -86,14 +86,49 @@ class ColumnsWidget extends WidgetType {
         this.container = document.createElement('div');
         this.container.className = `live-columns-container live-columns-${this.block.numColumns}`;
         this.container.setAttribute('data-live-columns', 'true');
+        // Make container focusable for delete handling
+        this.container.setAttribute('tabindex', '0');
 
         for (let i = 0; i < this.block.numColumns; i++) {
             const colDiv = this.createColumn(i);
             this.container.appendChild(colDiv);
         }
 
+        // Handle delete key on container (when selecting whole widget)
+        this.container.addEventListener('keydown', (e) => {
+            // Only handle when container itself is focused, not when editing a column
+            const target = e.target as HTMLElement;
+            if (target.hasAttribute('contenteditable')) return;
+
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.deleteEntireBlock();
+            }
+        });
+
         return this.container;
     }
+
+    /**
+     * Delete the entire column block from the document
+     */
+    private deleteEntireBlock(): void {
+        const from = this.block.startPos;
+        const to = this.block.endPos;
+
+        // Also delete trailing newline if present
+        const doc = this.view.state.doc;
+        let deleteTo = to;
+        if (deleteTo < doc.length && doc.sliceString(deleteTo, deleteTo + 1) === '\n') {
+            deleteTo++;
+        }
+
+        this.view.dispatch({
+            changes: { from, to: deleteTo }
+        });
+    }
+
 
     private createColumn(index: number): HTMLElement {
         const colDiv = document.createElement('div');
@@ -144,6 +179,14 @@ class ColumnsWidget extends WidgetType {
 
             // Sync to source document
             this.syncToSource();
+        });
+
+        // Strip HTML formatting on paste - only keep plain text
+        // This ensures pasted content uses column's CSS fonts
+        colDiv.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const text = e.clipboardData?.getData('text/plain') || '';
+            document.execCommand('insertText', false, text);
         });
 
         return colDiv;
@@ -365,13 +408,31 @@ class ColumnsWidget extends WidgetType {
     }
 
     eq(other: ColumnsWidget): boolean {
-        return (
-            this.block.startPos === other.block.startPos &&
-            this.block.endPos === other.block.endPos &&
-            this.block.numColumns === other.block.numColumns &&
-            this.block.colors.join('|') === other.block.colors.join('|') &&
-            this.block.borders.join('|') === other.block.borders.join('|')
-        );
+        // DON'T compare positions - they change when typing above the column
+        // Only compare actual content to prevent unnecessary re-creation
+        if (this.block.numColumns !== other.block.numColumns) return false;
+        if (this.block.columns.length !== other.block.columns.length) return false;
+        for (let i = 0; i < this.block.columns.length; i++) {
+            if (this.block.columns[i] !== other.block.columns[i]) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Update the existing DOM instead of recreating it
+     * This preserves user edits in contenteditable when document changes elsewhere
+     */
+    updateDOM(dom: HTMLElement, view: EditorView): boolean {
+        // Update our view reference
+        this.view = view;
+        this.container = dom;
+
+        // Update block positions (they may have shifted)
+        // But DON'T update column contents - preserve user's edits
+
+        // Return true to indicate we handled the update
+        // (no need to recreate the DOM)
+        return true;
     }
 
     ignoreEvent(): boolean {
@@ -575,8 +636,101 @@ const columnsViewPlugin = ViewPlugin.fromClass(
 );
 
 /**
+ * Transaction filter that blocks input on collapsed lines
+ * This runs BEFORE the transaction is applied, preventing corruption
+ */
+const blockCollapsedInput = EditorState.transactionFilter.of((tr) => {
+    // Only filter in live preview mode
+    const isLivePreview = tr.startState.field(editorLivePreviewField, false);
+    if (!isLivePreview) return tr;
+
+    // If no doc changes, allow the transaction (just cursor movement, etc)
+    if (!tr.docChanged) return tr;
+
+    // Get the position where the change is happening
+    const changes = tr.changes;
+    let blocked = false;
+
+    // Check each change
+    changes.iterChanges((fromA, toA) => {
+        // Find if this change is inside a collapsed block
+        const doc = tr.startState.doc;
+        const text = doc.toString();
+        // Use same regex as findColumnsBlocks
+        const startPattern = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+        const endPattern = /%%\s*columns:end\s*%{1,2}/gi;
+
+        let match;
+        while ((match = startPattern.exec(text)) !== null) {
+            const blockStart = match.index;
+            endPattern.lastIndex = startPattern.lastIndex;
+            const endMatch = endPattern.exec(text);
+            if (endMatch) {
+                const blockEnd = endMatch.index + endMatch[0].length;
+                const firstLineEnd = blockStart + match[0].length;
+
+                // If change is in the hidden zone (after first line, before block end)
+                if (fromA > firstLineEnd && fromA <= blockEnd) {
+                    blocked = true;
+                }
+            }
+        }
+    });
+
+    // If blocked, return empty transaction (cancel the input)
+    if (blocked) {
+        return [];
+    }
+
+    return tr;
+});
+
+/**
+ * Auto-jump cursor away from collapsed lines using requestAnimationFrame for speed
+ */
+const cursorAutoJump = EditorView.updateListener.of((update) => {
+    if (!update.selectionSet) return;
+
+    const isLivePreview = update.state.field(editorLivePreviewField, false);
+    if (!isLivePreview) return;
+
+    const cursor = update.state.selection.main.head;
+    const doc = update.state.doc;
+    const text = doc.toString();
+
+    // Use same regex as findColumnsBlocks
+    const startPattern = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+    const endPattern = /%%\s*columns:end\s*%{1,2}/gi;
+
+    let match;
+    while ((match = startPattern.exec(text)) !== null) {
+        const blockStart = match.index;
+        const firstLineEnd = blockStart + match[0].length;
+
+        endPattern.lastIndex = startPattern.lastIndex;
+        const endMatch = endPattern.exec(text);
+        if (endMatch) {
+            const blockEnd = endMatch.index + endMatch[0].length;
+
+            // If cursor is in hidden zone (after first line, before or at block end)
+            if (cursor > firstLineEnd && cursor <= blockEnd) {
+                const targetPos = Math.min(blockEnd + 1, doc.length);
+
+                // Use requestAnimationFrame for immediate response
+                requestAnimationFrame(() => {
+                    update.view.dispatch({
+                        selection: { anchor: targetPos }
+                    });
+                });
+                return;
+            }
+        }
+    }
+});
+
+/**
  * Export the extension
  */
 export function liveColumnsExtension() {
-    return [columnsViewPlugin];
+    return [columnsViewPlugin, blockCollapsedInput, cursorAutoJump];
 }

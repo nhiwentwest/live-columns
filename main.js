@@ -71,11 +71,37 @@ var ColumnsWidget = class extends import_view.WidgetType {
     this.container = document.createElement("div");
     this.container.className = `live-columns-container live-columns-${this.block.numColumns}`;
     this.container.setAttribute("data-live-columns", "true");
+    this.container.setAttribute("tabindex", "0");
     for (let i = 0; i < this.block.numColumns; i++) {
       const colDiv = this.createColumn(i);
       this.container.appendChild(colDiv);
     }
+    this.container.addEventListener("keydown", (e) => {
+      const target = e.target;
+      if (target.hasAttribute("contenteditable"))
+        return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.deleteEntireBlock();
+      }
+    });
     return this.container;
+  }
+  /**
+   * Delete the entire column block from the document
+   */
+  deleteEntireBlock() {
+    const from = this.block.startPos;
+    const to = this.block.endPos;
+    const doc = this.view.state.doc;
+    let deleteTo = to;
+    if (deleteTo < doc.length && doc.sliceString(deleteTo, deleteTo + 1) === "\n") {
+      deleteTo++;
+    }
+    this.view.dispatch({
+      changes: { from, to: deleteTo }
+    });
   }
   createColumn(index) {
     var _a, _b;
@@ -109,6 +135,12 @@ var ColumnsWidget = class extends import_view.WidgetType {
       this.setColumnContent(colDiv, this.columnContents[index], false);
       colDiv.classList.remove("live-column-editing");
       this.syncToSource();
+    });
+    colDiv.addEventListener("paste", (e) => {
+      var _a2;
+      e.preventDefault();
+      const text = ((_a2 = e.clipboardData) == null ? void 0 : _a2.getData("text/plain")) || "";
+      document.execCommand("insertText", false, text);
     });
     return colDiv;
   }
@@ -233,7 +265,24 @@ var ColumnsWidget = class extends import_view.WidgetType {
     }
   }
   eq(other) {
-    return this.block.startPos === other.block.startPos && this.block.endPos === other.block.endPos && this.block.numColumns === other.block.numColumns && this.block.colors.join("|") === other.block.colors.join("|") && this.block.borders.join("|") === other.block.borders.join("|");
+    if (this.block.numColumns !== other.block.numColumns)
+      return false;
+    if (this.block.columns.length !== other.block.columns.length)
+      return false;
+    for (let i = 0; i < this.block.columns.length; i++) {
+      if (this.block.columns[i] !== other.block.columns[i])
+        return false;
+    }
+    return true;
+  }
+  /**
+   * Update the existing DOM instead of recreating it
+   * This preserves user edits in contenteditable when document changes elsewhere
+   */
+  updateDOM(dom, view) {
+    this.view = view;
+    this.container = dom;
+    return true;
   }
   ignoreEvent() {
     return true;
@@ -380,8 +429,71 @@ var columnsViewPlugin = import_view.ViewPlugin.fromClass(
     decorations: (v) => v.decorations
   }
 );
+var blockCollapsedInput = import_state.EditorState.transactionFilter.of((tr) => {
+  const isLivePreview = tr.startState.field(import_obsidian.editorLivePreviewField, false);
+  if (!isLivePreview)
+    return tr;
+  if (!tr.docChanged)
+    return tr;
+  const changes = tr.changes;
+  let blocked = false;
+  changes.iterChanges((fromA, toA) => {
+    const doc = tr.startState.doc;
+    const text = doc.toString();
+    const startPattern = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+    const endPattern = /%%\s*columns:end\s*%{1,2}/gi;
+    let match;
+    while ((match = startPattern.exec(text)) !== null) {
+      const blockStart = match.index;
+      endPattern.lastIndex = startPattern.lastIndex;
+      const endMatch = endPattern.exec(text);
+      if (endMatch) {
+        const blockEnd = endMatch.index + endMatch[0].length;
+        const firstLineEnd = blockStart + match[0].length;
+        if (fromA > firstLineEnd && fromA <= blockEnd) {
+          blocked = true;
+        }
+      }
+    }
+  });
+  if (blocked) {
+    return [];
+  }
+  return tr;
+});
+var cursorAutoJump = import_view.EditorView.updateListener.of((update) => {
+  if (!update.selectionSet)
+    return;
+  const isLivePreview = update.state.field(import_obsidian.editorLivePreviewField, false);
+  if (!isLivePreview)
+    return;
+  const cursor = update.state.selection.main.head;
+  const doc = update.state.doc;
+  const text = doc.toString();
+  const startPattern = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
+  const endPattern = /%%\s*columns:end\s*%{1,2}/gi;
+  let match;
+  while ((match = startPattern.exec(text)) !== null) {
+    const blockStart = match.index;
+    const firstLineEnd = blockStart + match[0].length;
+    endPattern.lastIndex = startPattern.lastIndex;
+    const endMatch = endPattern.exec(text);
+    if (endMatch) {
+      const blockEnd = endMatch.index + endMatch[0].length;
+      if (cursor > firstLineEnd && cursor <= blockEnd) {
+        const targetPos = Math.min(blockEnd + 1, doc.length);
+        requestAnimationFrame(() => {
+          update.view.dispatch({
+            selection: { anchor: targetPos }
+          });
+        });
+        return;
+      }
+    }
+  }
+});
 function liveColumnsExtension() {
-  return [columnsViewPlugin];
+  return [columnsViewPlugin, blockCollapsedInput, cursorAutoJump];
 }
 
 // main.ts
