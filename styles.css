@@ -9,8 +9,6 @@
 	width: 100%;
 	margin: 12px 0;
 	margin-bottom: 8px;
-	/* Extend widget to cover collapsed lines below */
-	padding-bottom: 20px;
 	position: relative;
 	z-index: 5;
 	/* Make focusable container have visible outline */
@@ -48,17 +46,9 @@
 	background: var(--text-error-hover, #b91c1c);
 }
 
-/* Cover for collapsed lines - blocks cursor from landing there */
+/* No overlay needed when source lines are hidden */
 .live-columns-container::after {
-	content: '';
-	position: absolute;
-	bottom: -15px;
-	left: 0;
-	right: 0;
-	height: 30px;
-	background: transparent;
-	pointer-events: auto;
-	z-index: 10;
+	content: none;
 }
 
 
@@ -206,54 +196,23 @@
 	text-decoration: underline;
 }
 
-/* Hide marker spans in editor */
-.live-columns-marker-hidden,
-.live-columns-body-hidden {
-	font-size: 0px !important;
-	line-height: 0px !important;
-	color: transparent !important;
-	letter-spacing: -9999px !important;
-}
+/* ============================================
+   Live Preview - Hide Source Block Lines
+   ============================================ */
 
-/* Collapse entire cm-line containing hidden content (both markers and body) */
-.cm-line:has(.live-columns-body-hidden),
-.cm-line:has(.live-columns-marker-hidden) {
-	height: 0px !important;
-	min-height: 0px !important;
-	line-height: 0px !important;
-	padding: 0 !important;
-	margin: 0 !important;
-	overflow: hidden !important;
-	/* Allow clicks to pass through to content below */
-	pointer-events: none !important;
-}
-
-/* OVERRIDE: Keep the first line (with widget) visible and clickable */
-.cm-line:has(.live-columns-container) {
-	height: auto !important;
-	min-height: auto !important;
-	line-height: normal !important;
-	padding: revert !important;
-	margin: revert !important;
-	overflow: visible !important;
-	pointer-events: auto !important;
-}
-
-/* Also ensure the widget container itself is clickable */
-.live-columns-container,
-.live-columns-container * {
-	pointer-events: auto !important;
-}
-
-/* Hide fold indicators (> arrow) on hidden source lines */
-.cm-line:has(.live-columns-marker-hidden) .collapse-indicator,
-.cm-line:has(.live-columns-body-hidden) .collapse-indicator {
+/* Hide marker text on the first line (the widget is separate and remains visible) */
+.live-columns-inline-hidden {
 	display: none !important;
 }
 
-/* Hide fold placeholder (...) on hidden source lines */
-.cm-line:has(.live-columns-marker-hidden) .cm-foldPlaceholder,
-.cm-line:has(.live-columns-body-hidden) .cm-foldPlaceholder {
+/* Hide whole source lines inside a columns block (applied via Decoration.line) */
+.cm-line.live-columns-line-hidden {
+	display: none !important;
+}
+
+/* Backward-compat: if something still gets this class, hide it */
+.live-columns-marker-hidden,
+.live-columns-body-hidden {
 	display: none !important;
 }
 

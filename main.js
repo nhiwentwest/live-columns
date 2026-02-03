@@ -482,8 +482,11 @@ var columnsViewPlugin = import_view.ViewPlugin.fromClass(
         }
         const builder = new import_state.RangeSetBuilder();
         const blocks = findColumnsBlocks(view);
+        const hideLine = import_view.Decoration.line({ class: "live-columns-line-hidden" });
+        const hideInline = import_view.Decoration.mark({ class: "live-columns-inline-hidden", inclusive: false });
         for (const block of blocks) {
-          const docLength = view.state.doc.length;
+          const doc = view.state.doc;
+          const docLength = doc.length;
           const from = Math.max(0, Math.min(block.startPos, docLength));
           const to = Math.max(from, Math.min(block.endPos, docLength));
           if (from === to)
@@ -494,28 +497,14 @@ var columnsViewPlugin = import_view.ViewPlugin.fromClass(
             block: false
           });
           builder.add(from, from, widget);
-          const startHideTo = Math.min(docLength, from + block.startMarkerLen);
-          if (startHideTo > from) {
-            builder.add(
-              from,
-              startHideTo,
-              import_view.Decoration.mark({ class: "live-columns-marker-hidden", inclusive: false })
-            );
+          const startLine = doc.lineAt(from);
+          if (startLine.to > from) {
+            builder.add(from, startLine.to, hideInline);
           }
-          const endFrom = Math.max(from, to - block.endMarkerLen);
-          if (endFrom > startHideTo) {
-            builder.add(
-              startHideTo,
-              endFrom,
-              import_view.Decoration.mark({ class: "live-columns-body-hidden", inclusive: false })
-            );
-          }
-          if (to > endFrom) {
-            builder.add(
-              endFrom,
-              to,
-              import_view.Decoration.mark({ class: "live-columns-marker-hidden", inclusive: false })
-            );
+          const endLineNumber = doc.lineAt(to).number;
+          for (let ln = startLine.number + 1; ln <= endLineNumber; ln++) {
+            const line = doc.line(ln);
+            builder.add(line.from, line.from, hideLine);
           }
         }
         return builder.finish();

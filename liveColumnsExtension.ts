@@ -704,9 +704,13 @@ const columnsViewPlugin = ViewPlugin.fromClass(
                 const builder = new RangeSetBuilder<Decoration>();
                 const blocks = findColumnsBlocks(view);
 
+                                const hideLine = Decoration.line({ class: 'live-columns-line-hidden' });
+                const hideInline = Decoration.mark({ class: 'live-columns-inline-hidden', inclusive: false });
+
                 for (const block of blocks) {
+                    const doc = view.state.doc;
                     // Clamp decoration range to valid document bounds
-                    const docLength = view.state.doc.length;
+                    const docLength = doc.length;
                     const from = Math.max(0, Math.min(block.startPos, docLength));
                     const to = Math.max(from, Math.min(block.endPos, docLength));
                     if (from === to) continue;
@@ -718,38 +722,19 @@ const columnsViewPlugin = ViewPlugin.fromClass(
                         block: false
                     });
 
-                    // Add in order: widget -> start marker -> body -> end marker
                     builder.add(from, from, widget);
 
-                    // Hide start marker text
-                    const startHideTo = Math.min(docLength, from + block.startMarkerLen);
-                    if (startHideTo > from) {
-                        builder.add(
-                            from,
-                            startHideTo,
-                            Decoration.mark({ class: 'live-columns-marker-hidden', inclusive: false })
-                        );
+                    // Hide marker text on the first line (keep widget visible)
+                    const startLine = doc.lineAt(from);
+                    if (startLine.to > from) {
+                        builder.add(from, startLine.to, hideInline);
                     }
 
-                    // Hide end marker text
-                    const endFrom = Math.max(from, to - block.endMarkerLen);
-
-                    // Hide body between markers (markdown source)
-                    if (endFrom > startHideTo) {
-                        builder.add(
-                            startHideTo,
-                            endFrom,
-                            Decoration.mark({ class: 'live-columns-body-hidden', inclusive: false })
-                        );
-                    }
-
-                    // Hide end marker text
-                    if (to > endFrom) {
-                        builder.add(
-                            endFrom,
-                            to,
-                            Decoration.mark({ class: 'live-columns-marker-hidden', inclusive: false })
-                        );
+                    // Hide every subsequent source line in this block (including colors/borders/body/end marker)
+                    const endLineNumber = doc.lineAt(to).number;
+                    for (let ln = startLine.number + 1; ln <= endLineNumber; ln++) {
+                        const line = doc.line(ln);
+                        builder.add(line.from, line.from, hideLine);
                     }
                 }
 
