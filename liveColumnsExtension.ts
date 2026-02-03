@@ -704,7 +704,7 @@ const columnsViewPlugin = ViewPlugin.fromClass(
                 const builder = new RangeSetBuilder<Decoration>();
                 const blocks = findColumnsBlocks(view);
 
-                                const hideLine = Decoration.line({ class: 'live-columns-line-hidden' });
+                const hideLine = Decoration.line({ class: 'live-columns-line-hidden' });
                 const hideInline = Decoration.mark({ class: 'live-columns-inline-hidden', inclusive: false });
 
                 for (const block of blocks) {
@@ -767,7 +767,7 @@ const blockCollapsedInput = EditorState.transactionFilter.of((tr) => {
     let blocked = false;
 
     // Check each change
-    changes.iterChanges((fromA, toA) => {
+    changes.iterChanges((fromA, _toA) => {
         // Find if this change is inside a collapsed block
         const doc = tr.startState.doc;
         const text = doc.toString();
