@@ -72,6 +72,7 @@ function buildColumnsMarkdown(numColumns: number, columns: string[], colors?: st
 class ColumnsWidget extends WidgetType {
     private container: HTMLElement | null = null;
     private isUpdating = false;
+    private isEditing = false; // Track if any column is being edited
     private columnContents: string[];
 
     constructor(private block: ColumnsBlock, private view: EditorView) {
@@ -143,26 +144,40 @@ class ColumnsWidget extends WidgetType {
         let match;
         let from = -1;
         let to = -1;
+        let bestMatch = { from: -1, to: -1, distance: Infinity };
 
         while ((match = startRe.exec(text)) !== null) {
+            const startPos = match.index;
             const num = parseInt(match[1], 10);
+            
+            // Check: numColumns must match
             if (num === this.block.numColumns) {
-                from = match.index;
-                // Find the end marker
-                const endRe = /%%\s*columns:end\s*%{1,2}/gi;
-                endRe.lastIndex = startRe.lastIndex;
-                const endMatch = endRe.exec(text);
-                if (endMatch) {
-                    to = endMatch.index + endMatch[0].length;
+                // Calculate distance from expected position
+                const distance = Math.abs(startPos - this.block.startPos);
+                
+                // Track the closest match
+                if (distance < bestMatch.distance) {
+                    bestMatch.distance = distance;
+                    
+                    // Find the end marker
+                    const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+                    endRe.lastIndex = startRe.lastIndex;
+                    const endMatch = endRe.exec(text);
+                    if (endMatch) {
+                        bestMatch.from = match.index;
+                        bestMatch.to = endMatch.index + endMatch[0].length;
+                    }
                 }
-                break;
             }
         }
 
-        if (from === -1 || to === -1) {
+        if (bestMatch.from === -1 || bestMatch.to === -1) {
             console.error('Live Columns: Could not find block to delete');
             return;
         }
+
+        from = bestMatch.from;
+        to = bestMatch.to;
 
         // Also delete trailing newline if present
         let deleteTo = to;
@@ -183,6 +198,9 @@ class ColumnsWidget extends WidgetType {
         colDiv.setAttribute('contenteditable', 'true');
         colDiv.setAttribute('spellcheck', 'true');
         colDiv.setAttribute('data-placeholder', `Column ${index + 1}`);
+        // Tell LaTeX Suite to ignore this element to avoid conflicts
+        colDiv.setAttribute('data-latex-suite-ignore', 'true');
+        colDiv.setAttribute('data-mt-ignore', 'true'); // Also ignore MathType
 
         // Apply background color class if specified
         const colorClass = this.block.colors[index]?.trim();
@@ -211,33 +229,43 @@ class ColumnsWidget extends WidgetType {
             const currentContent = this.columnContents[index] || '';
             this.setColumnContent(colDiv, currentContent, true); // true = raw mode
             colDiv.classList.add('live-column-editing');
+            this.isEditing = true;
         });
 
         // On BLUR: Switch back to rendered HTML and sync
         colDiv.addEventListener('blur', () => {
             // First extract the raw text the user typed
-            const rawText = colDiv.innerText || '';
+            let rawText = colDiv.innerText || '';
+            
+            // Expand LaTeX shortcuts
+            rawText = this.expandLatexShortcuts(rawText);
+            
             this.columnContents[index] = rawText.trim();
 
             // Then render it back to HTML
             this.setColumnContent(colDiv, this.columnContents[index], false);
             colDiv.classList.remove('live-column-editing');
+            this.isEditing = false;
 
             // Sync to source document
             this.syncToSource();
         });
 
         // Sync on input with debounce to catch edits before any rebuild
+        // FIXED: Only sync when not editing to avoid cursor jumping
         let inputTimeout: NodeJS.Timeout | null = null;
         colDiv.addEventListener('input', () => {
             // Update local state immediately
             const rawText = colDiv.innerText || '';
             this.columnContents[index] = rawText.trim();
 
-            // Debounced sync to document
+            // Debounced sync to document - but skip if currently editing
             if (inputTimeout) clearTimeout(inputTimeout);
             inputTimeout = setTimeout(() => {
-                this.syncToSource();
+                // Only sync if not currently editing (user has stopped typing and left the column)
+                if (!this.isEditing) {
+                    this.syncToSource();
+                }
             }, 300);
         });
 
@@ -245,7 +273,10 @@ class ColumnsWidget extends WidgetType {
         // This ensures pasted content uses column's CSS fonts
         colDiv.addEventListener('paste', (e) => {
             e.preventDefault();
-            const text = e.clipboardData?.getData('text/plain') || '';
+            let text = e.clipboardData?.getData('text/plain') || '';
+
+            // Expand LaTeX shortcuts on paste
+            text = this.expandLatexShortcuts(text);
 
             // Use modern InputEvent API instead of deprecated execCommand
             const selection = window.getSelection();
@@ -261,6 +292,13 @@ class ColumnsWidget extends WidgetType {
                 selection.removeAllRanges();
                 selection.addRange(range);
             }
+
+            // Update columnContents after paste
+            setTimeout(() => {
+                const rawText = colDiv.innerText || '';
+                this.columnContents[index] = rawText.trim();
+                this.syncToSource();
+            }, 50);
         });
 
         return colDiv;
@@ -288,6 +326,138 @@ class ColumnsWidget extends WidgetType {
             const doc = parser.parseFromString(htmlContent, 'text/html');
             Array.from(doc.body.childNodes).forEach(node => colDiv.appendChild(node));
         }
+    }
+
+    /**
+     * Expand LaTeX shortcuts to Unicode symbols
+     * Matches patterns like $times, \gamma, or $\gamma$ and converts to Unicode
+     */
+    private expandLatexShortcuts(text: string): string {
+        if (!text) return text;
+        
+        // Common LaTeX shortcuts mapping
+        // Format: [pattern, replacement]
+        // Supports: $gamma, \gamma, $\gamma$
+        const shortcuts: [RegExp, string][] = [
+            // Greek letters - with backslash (e.g., \gamma)
+            [/\\alpha/g, 'α'], [/\\Alpha/g, 'Α'], [/\\beta/g, 'β'], [/\\Beta/g, 'Β'],
+            [/\\gamma/g, 'γ'], [/\\Gamma/g, 'Γ'], [/\\delta/g, 'δ'], [/\\Delta/g, 'Δ'],
+            [/\\epsilon/g, 'ε'], [/\\varepsilon/g, 'ε'], [/\\zeta/g, 'ζ'], [/\\eta/g, 'η'], 
+            [/\\theta/g, 'θ'], [/\\Theta/g, 'Θ'], [/\\vartheta/g, 'θ'],
+            [/\\iota/g, 'ι'], [/\\kappa/g, 'κ'], [/\\lambda/g, 'λ'],
+            [/\\Lambda/g, 'Λ'], [/\\mu/g, 'μ'], [/\\nu/g, 'ν'], [/\\xi/g, 'ξ'],
+            [/\\Xi/g, 'Ξ'], [/\\pi/g, 'π'], [/\\varpi/g, 'π'], [/\\Pi/g, 'Π'], [/\\rho/g, 'ρ'],
+            [/\\varrho/g, 'ρ'], [/\\sigma/g, 'σ'], [/\\Sigma/g, 'Σ'], [/\\varsigma/g, 'σ'],
+            [/\\tau/g, 'τ'], [/\\upsilon/g, 'υ'], [/\\Upsilon/g, 'Υ'],
+            [/\\phi/g, 'φ'], [/\\Phi/g, 'Φ'], [/\\varphi/g, 'φ'],
+            [/\\chi/g, 'χ'], [/\\psi/g, 'ψ'], [/\\Psi/g, 'Ψ'], 
+            [/\\omega/g, 'ω'], [/\\Omega/g, 'Ω'],
+            
+            // Greek letters - $ prefix (e.g., $gamma) - no backslash
+            [/\$alpha/g, 'α'], [/\$Alpha/g, 'Α'], [/\$beta/g, 'β'], [/\$Beta/g, 'Β'],
+            [/\$gamma/g, 'γ'], [/\$Gamma/g, 'Γ'], [/\$delta/g, 'δ'], [/\$Delta/g, 'Δ'],
+            [/\$epsilon/g, 'ε'], [/\$zeta/g, 'ζ'], [/\$eta/g, 'η'], [/\$theta/g, 'θ'],
+            [/\$Theta/g, 'Θ'], [/\$iota/g, 'ι'], [/\$kappa/g, 'κ'], [/\$lambda/g, 'λ'],
+            [/\$Lambda/g, 'Λ'], [/\$mu/g, 'μ'], [/\$nu/g, 'ν'], [/\$xi/g, 'ξ'],
+            [/\$Xi/g, 'Ξ'], [/\$pi/g, 'π'], [/\$Pi/g, 'Π'], [/\$rho/g, 'ρ'],
+            [/\$sigma/g, 'σ'], [/\$Sigma/g, 'Σ'], [/\$tau/g, 'τ'], [/\$upsilon/g, 'υ'],
+            [/\$phi/g, 'φ'], [/\$Phi/g, 'Φ'], [/\$chi/g, 'χ'], [/\$psi/g, 'ψ'],
+            [/\$Psi/g, 'Ψ'], [/\$omega/g, 'ω'], [/\$Omega/g, 'Ω'],
+            
+            // Math operators
+            [/\\times/g, '×'], [/\\div/g, '÷'], [/\\pm/g, '±'], [/\\mp/g, '∓'],
+            [/\\cdot/g, '·'], [/\\ast/g, '∗'], [/\\star/g, '★'], [/\\circ/g, '∘'],
+            [/\\bullet/g, '•'], [/\\oplus/g, '⊕'], [/\\ominus/g, '⊖'], [/\\otimes/g, '⊗'],
+            [/\\oslash/g, '⊘'], [/\\odot/g, '⊙'],
+            // $ prefix versions
+            [/\$times/g, '×'], [/\$div/g, '÷'], [/\$pm/g, '±'], [/\$mp/g, '∓'],
+            [/\$cdot/g, '·'], [/\$ast/g, '∗'], [/\$star/g, '★'], [/\$circ/g, '∘'],
+            [/\$bullet/g, '•'], [/\$oplus/g, '⊕'], [/\$ominus/g, '⊖'], [/\$otimes/g, '⊗'],
+            [/\$oslash/g, '⊘'], [/\$odot/g, '⊙'],
+            
+            // Relations
+            [/\\leq/g, '≤'], [/\\leqslant/g, '≤'], [/\\geq/g, '≥'], [/\\geqslant/g, '≥'],
+            [/\\neq/g, '≠'], [/\\ne/g, '≠'], [/\\approx/g, '≈'], [/\\equiv/g, '≡'],
+            [/\\cong/g, '≅'], [/\\sim/g, '∼'], [/\\simeq/g, '≃'], [/\\subset/g, '⊂'],
+            [/\\supset/g, '⊃'], [/\\subseteq/g, '⊆'], [/\\supseteq/g, '⊇'],
+            [/\\in/g, '∈'], [/\\ni/g, '∋'], [/\\notin/g, '∉'],
+            // $ prefix versions
+            [/\$leq/g, '≤'], [/\$leqn/g, '⩽'], [/\$geq/g, '≥'], [/\$geqn/g, '⩾'],
+            [/\$neq/g, '≠'], [/\$ne/g, '≠'], [/\$approx/g, '≈'], [/\$equiv/g, '≡'],
+            [/\$cong/g, '≅'], [/\$sim/g, '∼'], [/\$simeq/g, '≃'], [/\$subset/g, '⊂'],
+            [/\$supset/g, '⊃'], [/\$subseteq/g, '⊆'], [/\$supseteq/g, '⊇'],
+            [/\$in/g, '∈'], [/\$ni/g, '∋'], [/\$notin/g, '∉'],
+            
+            // Arrows
+            [/\\to/g, '→'], [/\\gets/g, '←'], [/\\rightarrow/g, '→'], [/\\leftarrow/g, '←'],
+            [/\\Rightarrow/g, '⇒'], [/\\Leftarrow/g, '⇐'], [/\\leftrightarrow/g, '↔'],
+            [/\\Updownarrow/g, '⇕'], [/\\mapsto/g, '↦'], [/\\hookleftarrow/g, '↪'],
+            [/\\hookrightarrow/g, '↩'], [/\\nearrow/g, '↗'], [/\\searrow/g, '↘'],
+            [/\\swarrow/g, '↙'], [/\\nwarrow/g, '↖'],
+            // $ prefix versions
+            [/\$to/g, '→'], [/\$gets/g, '←'], [/\$rightarrow/g, '→'], [/\$leftarrow/g, '←'],
+            [/\$Rightarrow/g, '⇒'], [/\$Leftarrow/g, '⇐'], [/\$leftrightarrow/g, '↔'],
+            [/\$Updownarrow/g, '⇕'], [/\$mapsto/g, '↦'], [/\$hookleftarrow/g, '↪'],
+            [/\$hookrightarrow/g, '↩'], [/\$nearrow/g, '↗'], [/\$searrow/g, '↘'],
+            [/\$swarrow/g, '↙'], [/\$nwarrow/g, '↖'],
+            
+            // Logic
+            [/\\forall/g, '∀'], [/\\exists/g, '∃'], [/\\nexists/g, '∄'], [/\\neg/g, '¬'],
+            [/\\land/g, '∧'], [/\\lor/g, '∨'], [/\\lnot/g, '¬'],
+            // $ prefix versions
+            [/\$forall/g, '∀'], [/\$exists/g, '∃'], [/\$nexists/g, '∄'], [/\$neg/g, '¬'],
+            [/\$land/g, '∧'], [/\$lor/g, '∨'], [/\$lnot/g, '¬'],
+            
+            // Sets
+            [/\\cap/g, '∩'], [/\\cup/g, '∪'], [/\\emptyset/g, '∅'], [/\\varnothing/g, '∅'],
+            [/\\partial/g, '∂'],
+            // $ prefix versions
+            [/\$cap/g, '∩'], [/\$cup/g, '∪'], [/\$emptyset/g, '∅'], [/\$partial/g, '∂'],
+            
+            // Misc
+            [/\\infty/g, '∞'], [/\\aleph/g, 'ℵ'], [/\\hbar/g, 'ℏ'], [/\\ell/g, 'ℓ'],
+            [/\\wp/g, '℘'], [/\\Re/g, 'ℜ'], [/\\Im/g, 'ℑ'], [/\\angle/g, '∠'],
+            [/\\triangle/g, '△'], [/\\square/g, '□'], [/\\diamond/g, '◇'],
+            [/\\clubsuit/g, '♣'], [/\\diamondsuit/g, '♢'], [/\\heartsuit/g, '♡'],
+            [/\\spadesuit/g, '♠'],
+            // $ prefix versions
+            [/\$infty/g, '∞'], [/\$aleph/g, 'ℵ'], [/\$hbar/g, 'ℏ'], [/\$ell/g, 'ℓ'],
+            [/\$wp/g, '℘'], [/\$Re/g, 'ℜ'], [/\$Im/g, 'ℑ'], [/\$angle/g, '∠'],
+            [/\$triangle/g, '△'], [/\$square/g, '□'], [/\$diamond/g, '◇'],
+            [/\$clubsuit/g, '♣'], [/\$diamondsuit/g, '♢'], [/\$heartsuit/g, '♡'],
+            [/\$spadesuit/g, '♠'],
+            
+            // Dots
+            [/\\ldots/g, '…'], [/\\cdots/g, '⋯'], [/\\vdots/g, '⋮'], [/\\ddots/g, '⋱'],
+            // $ prefix versions
+            [/\$ldots/g, '…'], [/\$cdots/g, '⋯'], [/\$vdots/g, '⋮'], [/\$ddots/g, '⋱'],
+            
+            // Brackets
+            [/\\langle/g, '⟨'], [/\\rangle/g, '⟩'], [/\\lceil/g, '⌈'], [/\\rceil/g, '⌉'],
+            [/\\lfloor/g, '⌊'], [/\\rfloor/g, '⌋'],
+            // $ prefix versions
+            [/\$langle/g, '⟨'], [/\$rangle/g, '⟩'], [/\$lceil/g, '⌈'], [/\$rceil/g, '⌉'],
+            [/\$lfloor/g, '⌊'], [/\$rfloor/g, '⌋'],
+            
+            // Currency
+            [/\\cent/g, '¢'], [/\\-pound/g, '£'], [/\\yen/g, '¥'], [/\\euro/g, '€'],
+            [/\\dollar/g, '$'], [/\\currency/g, '¤'],
+            // $ prefix versions
+            [/\$cent/g, '¢'], [/\$pound/g, '£'], [/\$yen/g, '¥'], [/\$euro/g, '€'],
+            [/\$dollar/g, '$'], [/\$currency/g, '¤'],
+            
+            // Text
+            [/\\degree/g, '°'], [/\\prime/g, '′'], [/\\dprime/g, '″'], [/\\ellipsis/g, '…'],
+            // $ prefix versions
+            [/\$degree/g, '°'], [/\$prime/g, '′'], [/\$dprime/g, '″'], [/\$ellipsis/g, '…'],
+        ];
+
+        let result = text;
+        for (const [pattern, replacement] of shortcuts) {
+            result = result.replace(pattern, replacement);
+        }
+        
+        return result;
     }
 
     /**
@@ -399,6 +569,9 @@ class ColumnsWidget extends WidgetType {
             const newContents: string[] = [];
             const columns = this.container.querySelectorAll('.live-column');
 
+            // Get the actual number of columns in the DOM (not the original block number)
+            const actualColumnCount = columns.length;
+
             columns.forEach((col) => {
                 const content = this.extractContent(col as HTMLElement);
                 newContents.push(content);
@@ -424,18 +597,27 @@ class ColumnsWidget extends WidgetType {
             let currentBlock = null;
             let match;
 
+            // Find the closest block by position - this is the most reliable method
+            // because we might have changed the number of columns
+            let bestMatchByPosition: any = null;
+            let bestPositionDistance = Infinity;
+
             while ((match = startRe.exec(text)) !== null) {
                 const startPos = match.index;
-                const endRe = /%%\s*columns:end\s*%{1,2}/gi;
-                endRe.lastIndex = startRe.lastIndex;
-                const endMatch = endRe.exec(text);
-
-                if (endMatch) {
-                    const endPos = endMatch.index + endMatch[0].length;
-                    // Check if this is our block (numColumns matches)
-                    const num = parseInt(match[1], 10);
-                    if (num === this.block.numColumns) {
-                        // Re-parse colors and borders from current document
+                const num = parseInt(match[1], 10);
+                
+                // Calculate distance from expected position
+                const distance = Math.abs(startPos - this.block.startPos);
+                
+                if (distance < bestPositionDistance) {
+                    bestPositionDistance = distance;
+                    
+                    const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+                    endRe.lastIndex = startRe.lastIndex;
+                    const endMatch = endRe.exec(text);
+                    
+                    if (endMatch) {
+                        const endPos = endMatch.index + endMatch[0].length;
                         const blockContent = text.slice(startRe.lastIndex, endMatch.index);
                         const colorLineRe = /%%\s*columns:colors\s+([^\n%]+)\s*%{1,2}/i;
                         const borderLineRe = /%%\s*columns:borders\s+([^\n%]+)\s*%{1,2}/i;
@@ -443,15 +625,21 @@ class ColumnsWidget extends WidgetType {
                         const colorMatch = blockContent.match(colorLineRe);
                         const borderMatch = blockContent.match(borderLineRe);
 
-                        currentBlock = {
+                        bestMatchByPosition = {
                             startPos,
                             endPos,
+                            numColumns: num,
                             colors: colorMatch ? colorMatch[1].split('|').map(c => c.trim()) : [],
                             borders: borderMatch ? borderMatch[1].split('|').map(b => b.trim()) : []
                         };
-                        break;
                     }
                 }
+            }
+
+            // Use the closest block by position (with generous tolerance)
+            // This handles cases where columns were deleted or added
+            if (bestMatchByPosition && bestPositionDistance < 200) {
+                currentBlock = bestMatchByPosition;
             }
 
             if (!currentBlock) {
@@ -467,8 +655,9 @@ class ColumnsWidget extends WidgetType {
             const from = Math.max(0, Math.min(currentBlock.startPos, doc.length));
             const to = Math.max(from, Math.min(currentBlock.endPos, doc.length));
 
+            // Use actual column count from DOM, not the original block numColumns
             const newMarkdown = buildColumnsMarkdown(
-                this.block.numColumns,
+                actualColumnCount,
                 newContents,
                 currentBlock.colors,  // Use current colors from document
                 currentBlock.borders   // Use current borders from document

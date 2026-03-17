@@ -210,6 +210,14 @@
 	display: none !important;
 }
 
+/* Hide CM block widgets that belong to hidden lines (e.g. rendered --- / HR in Live Preview)
+   These widgets are often rendered in a separate .cm-widgetBuffer sibling, not inside the .cm-line.
+   We hide widget buffers whose NEXT sibling line is one of our hidden lines.
+*/
+.cm-widgetBuffer:has(+ .cm-line.live-columns-line-hidden) {
+	display: none !important;
+}
+
 /* Backward-compat: if something still gets this class, hide it */
 .live-columns-marker-hidden,
 .live-columns-body-hidden {

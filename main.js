@@ -62,6 +62,7 @@ var ColumnsWidget = class extends import_view.WidgetType {
     this.view = view;
     this.container = null;
     this.isUpdating = false;
+    this.isEditing = false;
     this.columnContents = [...this.block.columns];
     while (this.columnContents.length < this.block.numColumns) {
       this.columnContents.push("");
@@ -114,23 +115,30 @@ var ColumnsWidget = class extends import_view.WidgetType {
     let match;
     let from = -1;
     let to = -1;
+    let bestMatch = { from: -1, to: -1, distance: Infinity };
     while ((match = startRe.exec(text)) !== null) {
+      const startPos = match.index;
       const num = parseInt(match[1], 10);
       if (num === this.block.numColumns) {
-        from = match.index;
-        const endRe = /%%\s*columns:end\s*%{1,2}/gi;
-        endRe.lastIndex = startRe.lastIndex;
-        const endMatch = endRe.exec(text);
-        if (endMatch) {
-          to = endMatch.index + endMatch[0].length;
+        const distance = Math.abs(startPos - this.block.startPos);
+        if (distance < bestMatch.distance) {
+          bestMatch.distance = distance;
+          const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+          endRe.lastIndex = startRe.lastIndex;
+          const endMatch = endRe.exec(text);
+          if (endMatch) {
+            bestMatch.from = match.index;
+            bestMatch.to = endMatch.index + endMatch[0].length;
+          }
         }
-        break;
       }
     }
-    if (from === -1 || to === -1) {
+    if (bestMatch.from === -1 || bestMatch.to === -1) {
       console.error("Live Columns: Could not find block to delete");
       return;
     }
+    from = bestMatch.from;
+    to = bestMatch.to;
     let deleteTo = to;
     if (deleteTo < doc.length && doc.sliceString(deleteTo, deleteTo + 1) === "\n") {
       deleteTo++;
@@ -147,6 +155,8 @@ var ColumnsWidget = class extends import_view.WidgetType {
     colDiv.setAttribute("contenteditable", "true");
     colDiv.setAttribute("spellcheck", "true");
     colDiv.setAttribute("data-placeholder", `Column ${index + 1}`);
+    colDiv.setAttribute("data-latex-suite-ignore", "true");
+    colDiv.setAttribute("data-mt-ignore", "true");
     const colorClass = (_a = this.block.colors[index]) == null ? void 0 : _a.trim();
     if (colorClass) {
       colDiv.classList.add(`live-col-${colorClass}`);
@@ -164,12 +174,15 @@ var ColumnsWidget = class extends import_view.WidgetType {
       const currentContent = this.columnContents[index] || "";
       this.setColumnContent(colDiv, currentContent, true);
       colDiv.classList.add("live-column-editing");
+      this.isEditing = true;
     });
     colDiv.addEventListener("blur", () => {
-      const rawText = colDiv.innerText || "";
+      let rawText = colDiv.innerText || "";
+      rawText = this.expandLatexShortcuts(rawText);
       this.columnContents[index] = rawText.trim();
       this.setColumnContent(colDiv, this.columnContents[index], false);
       colDiv.classList.remove("live-column-editing");
+      this.isEditing = false;
       this.syncToSource();
     });
     let inputTimeout = null;
@@ -179,13 +192,16 @@ var ColumnsWidget = class extends import_view.WidgetType {
       if (inputTimeout)
         clearTimeout(inputTimeout);
       inputTimeout = setTimeout(() => {
-        this.syncToSource();
+        if (!this.isEditing) {
+          this.syncToSource();
+        }
       }, 300);
     });
     colDiv.addEventListener("paste", (e) => {
       var _a2;
       e.preventDefault();
-      const text = ((_a2 = e.clipboardData) == null ? void 0 : _a2.getData("text/plain")) || "";
+      let text = ((_a2 = e.clipboardData) == null ? void 0 : _a2.getData("text/plain")) || "";
+      text = this.expandLatexShortcuts(text);
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
@@ -197,6 +213,11 @@ var ColumnsWidget = class extends import_view.WidgetType {
         selection.removeAllRanges();
         selection.addRange(range);
       }
+      setTimeout(() => {
+        const rawText = colDiv.innerText || "";
+        this.columnContents[index] = rawText.trim();
+        this.syncToSource();
+      }, 50);
     });
     return colDiv;
   }
@@ -218,6 +239,307 @@ var ColumnsWidget = class extends import_view.WidgetType {
       const doc = parser.parseFromString(htmlContent, "text/html");
       Array.from(doc.body.childNodes).forEach((node) => colDiv.appendChild(node));
     }
+  }
+  /**
+   * Expand LaTeX shortcuts to Unicode symbols
+   * Matches patterns like $times, \gamma, or $\gamma$ and converts to Unicode
+   */
+  expandLatexShortcuts(text) {
+    if (!text)
+      return text;
+    const shortcuts = [
+      // Greek letters - with backslash (e.g., \gamma)
+      [/\\alpha/g, "\u03B1"],
+      [/\\Alpha/g, "\u0391"],
+      [/\\beta/g, "\u03B2"],
+      [/\\Beta/g, "\u0392"],
+      [/\\gamma/g, "\u03B3"],
+      [/\\Gamma/g, "\u0393"],
+      [/\\delta/g, "\u03B4"],
+      [/\\Delta/g, "\u0394"],
+      [/\\epsilon/g, "\u03B5"],
+      [/\\varepsilon/g, "\u03B5"],
+      [/\\zeta/g, "\u03B6"],
+      [/\\eta/g, "\u03B7"],
+      [/\\theta/g, "\u03B8"],
+      [/\\Theta/g, "\u0398"],
+      [/\\vartheta/g, "\u03B8"],
+      [/\\iota/g, "\u03B9"],
+      [/\\kappa/g, "\u03BA"],
+      [/\\lambda/g, "\u03BB"],
+      [/\\Lambda/g, "\u039B"],
+      [/\\mu/g, "\u03BC"],
+      [/\\nu/g, "\u03BD"],
+      [/\\xi/g, "\u03BE"],
+      [/\\Xi/g, "\u039E"],
+      [/\\pi/g, "\u03C0"],
+      [/\\varpi/g, "\u03C0"],
+      [/\\Pi/g, "\u03A0"],
+      [/\\rho/g, "\u03C1"],
+      [/\\varrho/g, "\u03C1"],
+      [/\\sigma/g, "\u03C3"],
+      [/\\Sigma/g, "\u03A3"],
+      [/\\varsigma/g, "\u03C3"],
+      [/\\tau/g, "\u03C4"],
+      [/\\upsilon/g, "\u03C5"],
+      [/\\Upsilon/g, "\u03A5"],
+      [/\\phi/g, "\u03C6"],
+      [/\\Phi/g, "\u03A6"],
+      [/\\varphi/g, "\u03C6"],
+      [/\\chi/g, "\u03C7"],
+      [/\\psi/g, "\u03C8"],
+      [/\\Psi/g, "\u03A8"],
+      [/\\omega/g, "\u03C9"],
+      [/\\Omega/g, "\u03A9"],
+      // Greek letters - $ prefix (e.g., $gamma) - no backslash
+      [/\$alpha/g, "\u03B1"],
+      [/\$Alpha/g, "\u0391"],
+      [/\$beta/g, "\u03B2"],
+      [/\$Beta/g, "\u0392"],
+      [/\$gamma/g, "\u03B3"],
+      [/\$Gamma/g, "\u0393"],
+      [/\$delta/g, "\u03B4"],
+      [/\$Delta/g, "\u0394"],
+      [/\$epsilon/g, "\u03B5"],
+      [/\$zeta/g, "\u03B6"],
+      [/\$eta/g, "\u03B7"],
+      [/\$theta/g, "\u03B8"],
+      [/\$Theta/g, "\u0398"],
+      [/\$iota/g, "\u03B9"],
+      [/\$kappa/g, "\u03BA"],
+      [/\$lambda/g, "\u03BB"],
+      [/\$Lambda/g, "\u039B"],
+      [/\$mu/g, "\u03BC"],
+      [/\$nu/g, "\u03BD"],
+      [/\$xi/g, "\u03BE"],
+      [/\$Xi/g, "\u039E"],
+      [/\$pi/g, "\u03C0"],
+      [/\$Pi/g, "\u03A0"],
+      [/\$rho/g, "\u03C1"],
+      [/\$sigma/g, "\u03C3"],
+      [/\$Sigma/g, "\u03A3"],
+      [/\$tau/g, "\u03C4"],
+      [/\$upsilon/g, "\u03C5"],
+      [/\$phi/g, "\u03C6"],
+      [/\$Phi/g, "\u03A6"],
+      [/\$chi/g, "\u03C7"],
+      [/\$psi/g, "\u03C8"],
+      [/\$Psi/g, "\u03A8"],
+      [/\$omega/g, "\u03C9"],
+      [/\$Omega/g, "\u03A9"],
+      // Math operators
+      [/\\times/g, "\xD7"],
+      [/\\div/g, "\xF7"],
+      [/\\pm/g, "\xB1"],
+      [/\\mp/g, "\u2213"],
+      [/\\cdot/g, "\xB7"],
+      [/\\ast/g, "\u2217"],
+      [/\\star/g, "\u2605"],
+      [/\\circ/g, "\u2218"],
+      [/\\bullet/g, "\u2022"],
+      [/\\oplus/g, "\u2295"],
+      [/\\ominus/g, "\u2296"],
+      [/\\otimes/g, "\u2297"],
+      [/\\oslash/g, "\u2298"],
+      [/\\odot/g, "\u2299"],
+      // $ prefix versions
+      [/\$times/g, "\xD7"],
+      [/\$div/g, "\xF7"],
+      [/\$pm/g, "\xB1"],
+      [/\$mp/g, "\u2213"],
+      [/\$cdot/g, "\xB7"],
+      [/\$ast/g, "\u2217"],
+      [/\$star/g, "\u2605"],
+      [/\$circ/g, "\u2218"],
+      [/\$bullet/g, "\u2022"],
+      [/\$oplus/g, "\u2295"],
+      [/\$ominus/g, "\u2296"],
+      [/\$otimes/g, "\u2297"],
+      [/\$oslash/g, "\u2298"],
+      [/\$odot/g, "\u2299"],
+      // Relations
+      [/\\leq/g, "\u2264"],
+      [/\\leqslant/g, "\u2264"],
+      [/\\geq/g, "\u2265"],
+      [/\\geqslant/g, "\u2265"],
+      [/\\neq/g, "\u2260"],
+      [/\\ne/g, "\u2260"],
+      [/\\approx/g, "\u2248"],
+      [/\\equiv/g, "\u2261"],
+      [/\\cong/g, "\u2245"],
+      [/\\sim/g, "\u223C"],
+      [/\\simeq/g, "\u2243"],
+      [/\\subset/g, "\u2282"],
+      [/\\supset/g, "\u2283"],
+      [/\\subseteq/g, "\u2286"],
+      [/\\supseteq/g, "\u2287"],
+      [/\\in/g, "\u2208"],
+      [/\\ni/g, "\u220B"],
+      [/\\notin/g, "\u2209"],
+      // $ prefix versions
+      [/\$leq/g, "\u2264"],
+      [/\$leqn/g, "\u2A7D"],
+      [/\$geq/g, "\u2265"],
+      [/\$geqn/g, "\u2A7E"],
+      [/\$neq/g, "\u2260"],
+      [/\$ne/g, "\u2260"],
+      [/\$approx/g, "\u2248"],
+      [/\$equiv/g, "\u2261"],
+      [/\$cong/g, "\u2245"],
+      [/\$sim/g, "\u223C"],
+      [/\$simeq/g, "\u2243"],
+      [/\$subset/g, "\u2282"],
+      [/\$supset/g, "\u2283"],
+      [/\$subseteq/g, "\u2286"],
+      [/\$supseteq/g, "\u2287"],
+      [/\$in/g, "\u2208"],
+      [/\$ni/g, "\u220B"],
+      [/\$notin/g, "\u2209"],
+      // Arrows
+      [/\\to/g, "\u2192"],
+      [/\\gets/g, "\u2190"],
+      [/\\rightarrow/g, "\u2192"],
+      [/\\leftarrow/g, "\u2190"],
+      [/\\Rightarrow/g, "\u21D2"],
+      [/\\Leftarrow/g, "\u21D0"],
+      [/\\leftrightarrow/g, "\u2194"],
+      [/\\Updownarrow/g, "\u21D5"],
+      [/\\mapsto/g, "\u21A6"],
+      [/\\hookleftarrow/g, "\u21AA"],
+      [/\\hookrightarrow/g, "\u21A9"],
+      [/\\nearrow/g, "\u2197"],
+      [/\\searrow/g, "\u2198"],
+      [/\\swarrow/g, "\u2199"],
+      [/\\nwarrow/g, "\u2196"],
+      // $ prefix versions
+      [/\$to/g, "\u2192"],
+      [/\$gets/g, "\u2190"],
+      [/\$rightarrow/g, "\u2192"],
+      [/\$leftarrow/g, "\u2190"],
+      [/\$Rightarrow/g, "\u21D2"],
+      [/\$Leftarrow/g, "\u21D0"],
+      [/\$leftrightarrow/g, "\u2194"],
+      [/\$Updownarrow/g, "\u21D5"],
+      [/\$mapsto/g, "\u21A6"],
+      [/\$hookleftarrow/g, "\u21AA"],
+      [/\$hookrightarrow/g, "\u21A9"],
+      [/\$nearrow/g, "\u2197"],
+      [/\$searrow/g, "\u2198"],
+      [/\$swarrow/g, "\u2199"],
+      [/\$nwarrow/g, "\u2196"],
+      // Logic
+      [/\\forall/g, "\u2200"],
+      [/\\exists/g, "\u2203"],
+      [/\\nexists/g, "\u2204"],
+      [/\\neg/g, "\xAC"],
+      [/\\land/g, "\u2227"],
+      [/\\lor/g, "\u2228"],
+      [/\\lnot/g, "\xAC"],
+      // $ prefix versions
+      [/\$forall/g, "\u2200"],
+      [/\$exists/g, "\u2203"],
+      [/\$nexists/g, "\u2204"],
+      [/\$neg/g, "\xAC"],
+      [/\$land/g, "\u2227"],
+      [/\$lor/g, "\u2228"],
+      [/\$lnot/g, "\xAC"],
+      // Sets
+      [/\\cap/g, "\u2229"],
+      [/\\cup/g, "\u222A"],
+      [/\\emptyset/g, "\u2205"],
+      [/\\varnothing/g, "\u2205"],
+      [/\\partial/g, "\u2202"],
+      // $ prefix versions
+      [/\$cap/g, "\u2229"],
+      [/\$cup/g, "\u222A"],
+      [/\$emptyset/g, "\u2205"],
+      [/\$partial/g, "\u2202"],
+      // Misc
+      [/\\infty/g, "\u221E"],
+      [/\\aleph/g, "\u2135"],
+      [/\\hbar/g, "\u210F"],
+      [/\\ell/g, "\u2113"],
+      [/\\wp/g, "\u2118"],
+      [/\\Re/g, "\u211C"],
+      [/\\Im/g, "\u2111"],
+      [/\\angle/g, "\u2220"],
+      [/\\triangle/g, "\u25B3"],
+      [/\\square/g, "\u25A1"],
+      [/\\diamond/g, "\u25C7"],
+      [/\\clubsuit/g, "\u2663"],
+      [/\\diamondsuit/g, "\u2662"],
+      [/\\heartsuit/g, "\u2661"],
+      [/\\spadesuit/g, "\u2660"],
+      // $ prefix versions
+      [/\$infty/g, "\u221E"],
+      [/\$aleph/g, "\u2135"],
+      [/\$hbar/g, "\u210F"],
+      [/\$ell/g, "\u2113"],
+      [/\$wp/g, "\u2118"],
+      [/\$Re/g, "\u211C"],
+      [/\$Im/g, "\u2111"],
+      [/\$angle/g, "\u2220"],
+      [/\$triangle/g, "\u25B3"],
+      [/\$square/g, "\u25A1"],
+      [/\$diamond/g, "\u25C7"],
+      [/\$clubsuit/g, "\u2663"],
+      [/\$diamondsuit/g, "\u2662"],
+      [/\$heartsuit/g, "\u2661"],
+      [/\$spadesuit/g, "\u2660"],
+      // Dots
+      [/\\ldots/g, "\u2026"],
+      [/\\cdots/g, "\u22EF"],
+      [/\\vdots/g, "\u22EE"],
+      [/\\ddots/g, "\u22F1"],
+      // $ prefix versions
+      [/\$ldots/g, "\u2026"],
+      [/\$cdots/g, "\u22EF"],
+      [/\$vdots/g, "\u22EE"],
+      [/\$ddots/g, "\u22F1"],
+      // Brackets
+      [/\\langle/g, "\u27E8"],
+      [/\\rangle/g, "\u27E9"],
+      [/\\lceil/g, "\u2308"],
+      [/\\rceil/g, "\u2309"],
+      [/\\lfloor/g, "\u230A"],
+      [/\\rfloor/g, "\u230B"],
+      // $ prefix versions
+      [/\$langle/g, "\u27E8"],
+      [/\$rangle/g, "\u27E9"],
+      [/\$lceil/g, "\u2308"],
+      [/\$rceil/g, "\u2309"],
+      [/\$lfloor/g, "\u230A"],
+      [/\$rfloor/g, "\u230B"],
+      // Currency
+      [/\\cent/g, "\xA2"],
+      [/\\-pound/g, "\xA3"],
+      [/\\yen/g, "\xA5"],
+      [/\\euro/g, "\u20AC"],
+      [/\\dollar/g, "$"],
+      [/\\currency/g, "\xA4"],
+      // $ prefix versions
+      [/\$cent/g, "\xA2"],
+      [/\$pound/g, "\xA3"],
+      [/\$yen/g, "\xA5"],
+      [/\$euro/g, "\u20AC"],
+      [/\$dollar/g, "$"],
+      [/\$currency/g, "\xA4"],
+      // Text
+      [/\\degree/g, "\xB0"],
+      [/\\prime/g, "\u2032"],
+      [/\\dprime/g, "\u2033"],
+      [/\\ellipsis/g, "\u2026"],
+      // $ prefix versions
+      [/\$degree/g, "\xB0"],
+      [/\$prime/g, "\u2032"],
+      [/\$dprime/g, "\u2033"],
+      [/\$ellipsis/g, "\u2026"]
+    ];
+    let result = text;
+    for (const [pattern, replacement] of shortcuts) {
+      result = result.replace(pattern, replacement);
+    }
+    return result;
   }
   /**
    * Render markdown content as HTML
@@ -251,6 +573,7 @@ var ColumnsWidget = class extends import_view.WidgetType {
     try {
       const newContents = [];
       const columns = this.container.querySelectorAll(".live-column");
+      const actualColumnCount = columns.length;
       columns.forEach((col) => {
         const content = this.extractContent(col);
         newContents.push(content);
@@ -268,29 +591,36 @@ var ColumnsWidget = class extends import_view.WidgetType {
       const startRe = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
       let currentBlock = null;
       let match;
+      let bestMatchByPosition = null;
+      let bestPositionDistance = Infinity;
       while ((match = startRe.exec(text)) !== null) {
         const startPos = match.index;
-        const endRe = /%%\s*columns:end\s*%{1,2}/gi;
-        endRe.lastIndex = startRe.lastIndex;
-        const endMatch = endRe.exec(text);
-        if (endMatch) {
-          const endPos = endMatch.index + endMatch[0].length;
-          const num = parseInt(match[1], 10);
-          if (num === this.block.numColumns) {
+        const num = parseInt(match[1], 10);
+        const distance = Math.abs(startPos - this.block.startPos);
+        if (distance < bestPositionDistance) {
+          bestPositionDistance = distance;
+          const endRe = /%%\s*columns:end\s*%{1,2}/gi;
+          endRe.lastIndex = startRe.lastIndex;
+          const endMatch = endRe.exec(text);
+          if (endMatch) {
+            const endPos = endMatch.index + endMatch[0].length;
             const blockContent = text.slice(startRe.lastIndex, endMatch.index);
             const colorLineRe = /%%\s*columns:colors\s+([^\n%]+)\s*%{1,2}/i;
             const borderLineRe = /%%\s*columns:borders\s+([^\n%]+)\s*%{1,2}/i;
             const colorMatch = blockContent.match(colorLineRe);
             const borderMatch = blockContent.match(borderLineRe);
-            currentBlock = {
+            bestMatchByPosition = {
               startPos,
               endPos,
+              numColumns: num,
               colors: colorMatch ? colorMatch[1].split("|").map((c) => c.trim()) : [],
               borders: borderMatch ? borderMatch[1].split("|").map((b) => b.trim()) : []
             };
-            break;
           }
         }
+      }
+      if (bestMatchByPosition && bestPositionDistance < 200) {
+        currentBlock = bestMatchByPosition;
       }
       if (!currentBlock) {
         currentBlock = {
@@ -303,7 +633,7 @@ var ColumnsWidget = class extends import_view.WidgetType {
       const from = Math.max(0, Math.min(currentBlock.startPos, doc.length));
       const to = Math.max(from, Math.min(currentBlock.endPos, doc.length));
       const newMarkdown = buildColumnsMarkdown(
-        this.block.numColumns,
+        actualColumnCount,
         newContents,
         currentBlock.colors,
         // Use current colors from document
@@ -526,7 +856,7 @@ var blockCollapsedInput = import_state.EditorState.transactionFilter.of((tr) => 
     return tr;
   const changes = tr.changes;
   let blocked = false;
-  changes.iterChanges((fromA, toA) => {
+  changes.iterChanges((fromA, _toA) => {
     const doc = tr.startState.doc;
     const text = doc.toString();
     const startPattern = /%%\s*columns:start\s+(\d+)\s*%{1,2}/gi;
