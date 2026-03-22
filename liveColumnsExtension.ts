@@ -24,6 +24,17 @@ interface ColumnsBlock {
 }
 
 /**
+ * Partial block data for position matching (during update)
+ */
+interface PartialColumnsBlock {
+    startPos: number;
+    endPos: number;
+    numColumns: number;
+    colors: string[];
+    borders: string[];
+}
+
+/**
  * Build marker-based columns markdown
  * %% columns:start N %%
  * %% columns:colors ... %%
@@ -599,7 +610,7 @@ class ColumnsWidget extends WidgetType {
 
             // Find the closest block by position - this is the most reliable method
             // because we might have changed the number of columns
-            let bestMatchByPosition: any = null;
+            let bestMatchByPosition: PartialColumnsBlock | null = null;
             let bestPositionDistance = Infinity;
 
             while ((match = startRe.exec(text)) !== null) {
