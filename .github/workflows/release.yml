@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  release:
+    name: Build, attest, and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify source policy
+        run: npm test
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Validate release assets
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          node - <<'NODE'
+          const fs = require('node:fs');
+
+          const tagVersion = process.env.TAG_NAME.replace(/^v/, '');
+          const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+          const versions = JSON.parse(fs.readFileSync('versions.json', 'utf8'));
+
+          if (manifest.version !== tagVersion) {
+            throw new Error(`manifest.json version ${manifest.version} does not match tag ${tagVersion}`);
+          }
+
+          if (versions[tagVersion] !== manifest.minAppVersion) {
+            throw new Error(`versions.json is missing ${tagVersion}: ${manifest.minAppVersion}`);
+          }
+          NODE
+
+          test -f main.js
+          test -f manifest.json
+          test -f styles.css
+          test "$(find . -maxdepth 1 -type f \( -name 'main.js' -o -name 'manifest.json' -o -name 'styles.css' \) | wc -l)" -eq 3
+
+      - name: Generate artifact attestations
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      - name: Write release notes
+        run: |
+          cat > RELEASE_NOTES.md <<'EOF'
+          ## Changes
+          - Replaced unsafe DOM serialization with node-based markdown extraction.
+          - Removed direct `element.style` usage from the color picker.
+          - Added release policy checks for Obsidian review compatibility.
+          - Bundled release assets are limited to `main.js`, `manifest.json`, and `styles.css`.
+          EOF
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" main.js manifest.json styles.css \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Live Columns ${TAG_NAME#v}" \
+            --notes-file RELEASE_NOTES.md \
+            --verify-tag

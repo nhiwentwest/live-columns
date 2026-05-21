@@ -234,10 +234,7 @@ var ColumnsWidget = class extends import_view.WidgetType {
     if (rawMode) {
       colDiv.innerText = content || "";
     } else {
-      const htmlContent = this.renderContent(content);
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(htmlContent, "text/html");
-      Array.from(doc.body.childNodes).forEach((node) => colDiv.appendChild(node));
+      this.renderContent(colDiv, content);
     }
   }
   /**
@@ -542,29 +539,148 @@ var ColumnsWidget = class extends import_view.WidgetType {
     return result;
   }
   /**
-   * Render markdown content as HTML
+   * Render markdown content directly into DOM nodes.
    */
-  renderContent(text) {
+  renderContent(container, text) {
     if (!text.trim()) {
-      return "<br>";
+      container.appendChild(document.createElement("br"));
+      return;
     }
-    let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/^(#{1,6})\s+(.+)$/gm, (_, hashes, content) => {
-      const level = hashes.length;
-      return `<h${level}>${content}</h${level}>`;
-    }).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>").replace(/`(.+?)`/g, "<code>$1</code>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>').replace(/^[-*]\s+(.+)$/gm, "<li>$1</li>").replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>").replace(/((?:<li>.+?<\/li>\n?)+)/g, "<ul>$1</ul>").replace(/^(?!<[hulo])(.+)$/gm, "<div>$1</div>");
-    html = html.replace(/\n/g, "<br>");
-    return html;
+    let activeList = null;
+    const closeList = () => {
+      if (activeList) {
+        container.appendChild(activeList);
+        activeList = null;
+      }
+    };
+    text.split("\n").forEach((line) => {
+      if (!line.trim()) {
+        closeList();
+        container.appendChild(document.createElement("br"));
+        return;
+      }
+      const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        closeList();
+        const heading = document.createElement(`h${headingMatch[1].length}`);
+        this.appendInlineMarkdown(heading, headingMatch[2]);
+        container.appendChild(heading);
+        return;
+      }
+      const listMatch = line.match(/^[-*]\s+(.+)$/) || line.match(/^\d+\.\s+(.+)$/);
+      if (listMatch) {
+        if (!activeList) {
+          activeList = document.createElement("ul");
+        }
+        const item = document.createElement("li");
+        this.appendInlineMarkdown(item, listMatch[1]);
+        activeList.appendChild(item);
+        return;
+      }
+      closeList();
+      const div = document.createElement("div");
+      this.appendInlineMarkdown(div, line);
+      container.appendChild(div);
+    });
+    closeList();
+  }
+  appendInlineMarkdown(parent, text) {
+    const tokenRe = /(\*\*([^*]+?)\*\*|\*([^*]+?)\*|`([^`]+?)`|\[([^\]]+)\]\(([^)]+)\))/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = tokenRe.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parent.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      }
+      if (match[2] !== void 0) {
+        const strong = document.createElement("strong");
+        strong.textContent = match[2];
+        parent.appendChild(strong);
+      } else if (match[3] !== void 0) {
+        const em = document.createElement("em");
+        em.textContent = match[3];
+        parent.appendChild(em);
+      } else if (match[4] !== void 0) {
+        const code = document.createElement("code");
+        code.textContent = match[4];
+        parent.appendChild(code);
+      } else if (match[5] !== void 0 && match[6] !== void 0) {
+        const safeHref = this.sanitizeHref(match[6]);
+        if (safeHref) {
+          const link = document.createElement("a");
+          link.textContent = match[5];
+          link.setAttribute("href", safeHref);
+          parent.appendChild(link);
+        } else {
+          parent.appendChild(document.createTextNode(match[5]));
+        }
+      }
+      lastIndex = tokenRe.lastIndex;
+    }
+    if (lastIndex < text.length) {
+      parent.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+  }
+  sanitizeHref(href) {
+    const trimmed = href.trim();
+    if (/^(javascript|data|vbscript):/i.test(trimmed)) {
+      return null;
+    }
+    return trimmed;
   }
   /**
    * Extract plain text/markdown from HTML
    * FIXED: Improved logic to handle div/br combinations without adding extra lines
    */
   extractContent(el) {
-    const clone = el.cloneNode(true);
-    let text = clone.innerHTML.replace(/<h(\d)>(.+?)<\/h\1>/gi, (_, level, content) => {
-      return "#".repeat(parseInt(level)) + " " + content + "\n";
-    }).replace(/<strong>(.+?)<\/strong>/gi, "**$1**").replace(/<b>(.+?)<\/b>/gi, "**$1**").replace(/<em>(.+?)<\/em>/gi, "*$1*").replace(/<i>(.+?)<\/i>/gi, "*$1*").replace(/<code>(.+?)<\/code>/gi, "`$1`").replace(/<a href="([^"]+)">(.+?)<\/a>/gi, "[$2]($1)").replace(/<li>(.+?)<\/li>/gi, "- $1\n").replace(/<\/?[uo]l>/gi, "").replace(/<div[^>]*><br><\/div>/gi, "\n").replace(/<div[^>]*>/gi, "\n").replace(/<\/div>/gi, "").replace(/<p[^>]*>/gi, "\n").replace(/<\/p>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/^\n+/, "").replace(/\n+$/, "").replace(/\n{3,}/g, "\n\n").trim();
-    return text;
+    const text = Array.from(el.childNodes).map((node) => this.markdownFromNode(node)).join("");
+    return this.normalizeExtractedMarkdown(text);
+  }
+  markdownFromNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent || "";
+    }
+    if (!(node instanceof HTMLElement)) {
+      return "";
+    }
+    const tagName = node.tagName.toLowerCase();
+    const childMarkdown = () => Array.from(node.childNodes).map((child) => this.markdownFromNode(child)).join("");
+    if (/^h[1-6]$/.test(tagName)) {
+      const level = Number(tagName.slice(1));
+      return `${"#".repeat(level)} ${childMarkdown().trim()}
+`;
+    }
+    if (tagName === "strong" || tagName === "b") {
+      return `**${childMarkdown()}**`;
+    }
+    if (tagName === "em" || tagName === "i") {
+      return `*${childMarkdown()}*`;
+    }
+    if (tagName === "code") {
+      return `\`${node.textContent || ""}\``;
+    }
+    if (tagName === "a") {
+      const href = node.getAttribute("href") || "";
+      return `[${childMarkdown()}](${href})`;
+    }
+    if (tagName === "li") {
+      return `- ${childMarkdown().trim()}
+`;
+    }
+    if (tagName === "ul" || tagName === "ol") {
+      return childMarkdown();
+    }
+    if (tagName === "div" || tagName === "p") {
+      return `${childMarkdown()}
+`;
+    }
+    if (tagName === "br") {
+      return "\n";
+    }
+    return childMarkdown();
+  }
+  normalizeExtractedMarkdown(text) {
+    return text.replace(/\u00a0/g, " ").replace(/^\n+/, "").replace(/\n+$/, "").replace(/\n{3,}/g, "\n\n").trim();
   }
   syncToSource() {
     if (this.isUpdating || !this.container)
@@ -1221,11 +1337,54 @@ var LiveColumnsPlugin = class extends import_obsidian2.Plugin {
    * Converts HTML elements back to markdown syntax
    */
   extractMarkdownFromHTML(el) {
-    const clone = el.cloneNode(true);
-    let text = clone.innerHTML.replace(/<h(\d)[^>]*>(.+?)<\/h\1>/gi, (_, level, content) => {
-      return "#".repeat(parseInt(level)) + " " + content + "\n";
-    }).replace(/<strong[^>]*>(.+?)<\/strong>/gi, "**$1**").replace(/<b[^>]*>(.+?)<\/b>/gi, "**$1**").replace(/<em[^>]*>(.+?)<\/em>/gi, "*$1*").replace(/<i[^>]*>(.+?)<\/i>/gi, "*$1*").replace(/<code[^>]*>(.+?)<\/code>/gi, "`$1`").replace(/<a[^>]*href="([^"]*)"[^>]*>(.+?)<\/a>/gi, "[$2]($1)").replace(/<li[^>]*>(.+?)<\/li>/gi, "- $1\n").replace(/<\/?ul[^>]*>/gi, "").replace(/<\/?ol[^>]*>/gi, "").replace(/<div[^>]*>(.+?)<\/div>/gi, "$1\n").replace(/<p[^>]*>(.+?)<\/p>/gi, "$1\n").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&quot;/g, '"').replace(/\n{3,}/g, "\n\n").trim();
-    return text;
+    const text = Array.from(el.childNodes).map((node) => this.markdownFromNode(node)).join("");
+    return this.normalizeExtractedMarkdown(text);
+  }
+  markdownFromNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent || "";
+    }
+    if (!(node instanceof HTMLElement)) {
+      return "";
+    }
+    const tagName = node.tagName.toLowerCase();
+    const childMarkdown = () => Array.from(node.childNodes).map((child) => this.markdownFromNode(child)).join("");
+    if (/^h[1-6]$/.test(tagName)) {
+      const level = Number(tagName.slice(1));
+      return `${"#".repeat(level)} ${childMarkdown().trim()}
+`;
+    }
+    if (tagName === "strong" || tagName === "b") {
+      return `**${childMarkdown()}**`;
+    }
+    if (tagName === "em" || tagName === "i") {
+      return `*${childMarkdown()}*`;
+    }
+    if (tagName === "code") {
+      return `\`${node.textContent || ""}\``;
+    }
+    if (tagName === "a") {
+      const href = node.getAttribute("href") || "";
+      return `[${childMarkdown()}](${href})`;
+    }
+    if (tagName === "li") {
+      return `- ${childMarkdown().trim()}
+`;
+    }
+    if (tagName === "ul" || tagName === "ol") {
+      return childMarkdown();
+    }
+    if (tagName === "div" || tagName === "p") {
+      return `${childMarkdown()}
+`;
+    }
+    if (tagName === "br") {
+      return "\n";
+    }
+    return childMarkdown();
+  }
+  normalizeExtractedMarkdown(text) {
+    return text.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   }
   /**
    * Register editor commands for inserting column layouts
@@ -1518,7 +1677,6 @@ var ColorPickerModal = class extends import_obsidian2.Modal {
         swatch.addClass("color-swatch-default");
       } else {
         swatch.setCssProps({ "--swatch-color": p.color });
-        swatch.style.backgroundColor = p.color;
       }
       swatch.addEventListener("click", () => {
         this.onSelect(p.token, p.name);

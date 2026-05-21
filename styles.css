@@ -602,6 +602,7 @@
 .live-columns-color-picker .color-swatch {
 	width: 48px;
 	height: 48px;
+	background: var(--swatch-color);
 	border-radius: 8px;
 	cursor: pointer;
 	border: 2px solid var(--background-modifier-border);

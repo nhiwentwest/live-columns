@@ -408,46 +408,73 @@ export default class LiveColumnsPlugin extends Plugin {
      * Converts HTML elements back to markdown syntax
      */
     private extractMarkdownFromHTML(el: HTMLElement): string {
-        const clone = el.cloneNode(true) as HTMLElement;
+        const text = Array.from(el.childNodes)
+            .map(node => this.markdownFromNode(node))
+            .join('');
 
-        let text = clone.innerHTML
-            // Headings
-            .replace(/<h(\d)[^>]*>(.+?)<\/h\1>/gi, (_, level, content) => {
-                return '#'.repeat(parseInt(level)) + ' ' + content + '\n';
-            })
-            // Bold
-            .replace(/<strong[^>]*>(.+?)<\/strong>/gi, '**$1**')
-            .replace(/<b[^>]*>(.+?)<\/b>/gi, '**$1**')
-            // Italic
-            .replace(/<em[^>]*>(.+?)<\/em>/gi, '*$1*')
-            .replace(/<i[^>]*>(.+?)<\/i>/gi, '*$1*')
-            // Code
-            .replace(/<code[^>]*>(.+?)<\/code>/gi, '`$1`')
-            // Links
-            .replace(/<a[^>]*href="([^"]*)"[^>]*>(.+?)<\/a>/gi, '[$2]($1)')
-            // List items
-            .replace(/<li[^>]*>(.+?)<\/li>/gi, '- $1\n')
-            // Remove list wrappers
-            .replace(/<\/?ul[^>]*>/gi, '')
-            .replace(/<\/?ol[^>]*>/gi, '')
-            // Divs/paragraphs - just extract content
-            .replace(/<div[^>]*>(.+?)<\/div>/gi, '$1\n')
-            .replace(/<p[^>]*>(.+?)<\/p>/gi, '$1\n')
-            // Line breaks
-            .replace(/<br\s*\/?>/gi, '\n')
-            // Remove any remaining HTML tags
-            .replace(/<[^>]+>/g, '')
-            // Decode HTML entities
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&nbsp;/g, ' ')
-            .replace(/&quot;/g, '"')
-            // Clean up multiple newlines
+        return this.normalizeExtractedMarkdown(text);
+    }
+
+    private markdownFromNode(node: Node): string {
+        if (node.nodeType === Node.TEXT_NODE) {
+            return node.textContent || '';
+        }
+
+        if (!(node instanceof HTMLElement)) {
+            return '';
+        }
+
+        const tagName = node.tagName.toLowerCase();
+        const childMarkdown = () => Array.from(node.childNodes)
+            .map(child => this.markdownFromNode(child))
+            .join('');
+
+        if (/^h[1-6]$/.test(tagName)) {
+            const level = Number(tagName.slice(1));
+            return `${'#'.repeat(level)} ${childMarkdown().trim()}\n`;
+        }
+
+        if (tagName === 'strong' || tagName === 'b') {
+            return `**${childMarkdown()}**`;
+        }
+
+        if (tagName === 'em' || tagName === 'i') {
+            return `*${childMarkdown()}*`;
+        }
+
+        if (tagName === 'code') {
+            return `\`${node.textContent || ''}\``;
+        }
+
+        if (tagName === 'a') {
+            const href = node.getAttribute('href') || '';
+            return `[${childMarkdown()}](${href})`;
+        }
+
+        if (tagName === 'li') {
+            return `- ${childMarkdown().trim()}\n`;
+        }
+
+        if (tagName === 'ul' || tagName === 'ol') {
+            return childMarkdown();
+        }
+
+        if (tagName === 'div' || tagName === 'p') {
+            return `${childMarkdown()}\n`;
+        }
+
+        if (tagName === 'br') {
+            return '\n';
+        }
+
+        return childMarkdown();
+    }
+
+    private normalizeExtractedMarkdown(text: string): string {
+        return text
+            .replace(/\u00a0/g, ' ')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
-
-        return text;
     }
 
     /**
@@ -825,7 +852,6 @@ class ColorPickerModal extends Modal {
                 swatch.addClass('color-swatch-default');
             } else {
                 swatch.setCssProps({ '--swatch-color': p.color });
-                swatch.style.backgroundColor = p.color;
             }
 
             swatch.addEventListener('click', () => {
