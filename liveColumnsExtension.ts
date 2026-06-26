@@ -665,10 +665,25 @@ class ColumnsWidget extends WidgetType {
                 newContents.push(content);
             });
 
-            // Check if anything actually changed to avoid unnecessary updates
-            const hasChanges = newContents.some((content, i) =>
-                content !== (this.columnContents[i] || '')
-            );
+            // Check if anything actually changed to avoid unnecessary updates.
+            // Compare against the content currently persisted in the document, NOT
+            // against this.columnContents: the latter is kept in sync with the DOM
+            // by the `input`/`blur` handlers, so it would always match newContents
+            // here and the write would be skipped, meaning edits were never saved.
+            let persistedColumns: string[] | null = null;
+            let persistedDistance = Infinity;
+            for (const b of findColumnsBlocks(this.view)) {
+                const d = Math.abs(b.startPos - this.block.startPos);
+                if (d < persistedDistance) {
+                    persistedDistance = d;
+                    persistedColumns = b.columns;
+                }
+            }
+            const hasChanges = !persistedColumns
+                || newContents.length !== persistedColumns.length
+                || newContents.some((content, i) =>
+                    (content || '') !== (persistedColumns![i] || '')
+                );
 
             if (!hasChanges) {
                 this.isUpdating = false;

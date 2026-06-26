@@ -694,8 +694,17 @@ var ColumnsWidget = class extends import_view.WidgetType {
         const content = this.extractContent(col);
         newContents.push(content);
       });
-      const hasChanges = newContents.some(
-        (content, i) => content !== (this.columnContents[i] || "")
+      let persistedColumns = null;
+      let persistedDistance = Infinity;
+      for (const b of findColumnsBlocks(this.view)) {
+        const d = Math.abs(b.startPos - this.block.startPos);
+        if (d < persistedDistance) {
+          persistedDistance = d;
+          persistedColumns = b.columns;
+        }
+      }
+      const hasChanges = !persistedColumns || newContents.length !== persistedColumns.length || newContents.some(
+        (content, i) => (content || "") !== (persistedColumns[i] || "")
       );
       if (!hasChanges) {
         this.isUpdating = false;
